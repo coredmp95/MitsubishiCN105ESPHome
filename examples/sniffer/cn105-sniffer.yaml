@@ -1,0 +1,100 @@
+# CN105 passive sniffer — listens to the dialogue between an official
+# Mitsubishi CN105 device (MAC-567IF / MAC-577IF-E / MAC-587IF Wi-Fi interface)
+# and the indoor unit, without ever transmitting.
+#
+# Wiring (see docs/sniffing.md): a Y-cable on the CN105 connector, with the
+# official module still plugged in. The sniffer only taps three wires:
+#
+#   CN105 pin 2  GND ─────────────── ESP32 GND
+#   CN105 pin 4  TX (HP → module) ── divider ── GPIO25  (uart hp_tx)
+#   CN105 pin 5  RX (module → HP) ── divider ── GPIO26  (uart mod_tx)
+#
+# CN105 data lines are 5V logic and ESP32 GPIOs are NOT 5V tolerant: put a
+# 10k (series) / 20k (to GND) divider, or a level shifter, on each line.
+# Never connect an ESP32 TX pin to the CN105 lines. Leave pin 1 (12V) alone.
+# Power the ESP32 from USB with a common ground.
+#
+# Capture:   esphome logs cn105-sniffer.yaml | tee capture.log
+# Convert:   python3 tools/cn105_capture.py capture.log --stats
+#
+# Each frame chunk is logged as:   [cn105sniff] <DIR> <millis> <hex bytes>
+#   DIR = HP  (bytes sent by the indoor unit)
+#   DIR = MOD (bytes sent by the official module / controller)
+# millis is the device time when the chunk was flushed (about `timeout` after
+# its last byte), so both directions share one time base.
+
+substitutions:
+  name: "cn105-sniffer"
+  friendly_name: CN105 Sniffer
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+api:
+
+ota:
+  - platform: esphome
+
+logger:
+  level: DEBUG
+  logs:
+    uart_debug: NONE   # we log through our own tag below
+    cn105sniff: DEBUG
+
+uart:
+  # Indoor unit → module (CN105 pin 4)
+  - id: hp_tx
+    rx_pin: GPIO25
+    baud_rate: 2400
+    data_bits: 8
+    parity: EVEN
+    stop_bits: 1
+    rx_buffer_size: 512
+    debug:
+      direction: RX
+      dummy_receiver: true   # no component reads this bus; let the debugger consume it
+      after:
+        timeout: 10ms        # ~2 byte times at 2400 baud 8E1; the converter re-frames anyway
+      sequence:
+        - lambda: |-
+            std::string hex;
+            char b[4];
+            for (auto c : bytes) { snprintf(b, sizeof(b), "%02X ", c); hex += b; }
+            ESP_LOGD("cn105sniff", "HP %u %s", (unsigned) millis(), hex.c_str());
+
+  # Module → indoor unit (CN105 pin 5)
+  - id: mod_tx
+    rx_pin: GPIO26
+    baud_rate: 2400
+    data_bits: 8
+    parity: EVEN
+    stop_bits: 1
+    rx_buffer_size: 512
+    debug:
+      direction: RX
+      dummy_receiver: true
+      after:
+        timeout: 10ms
+      sequence:
+        - lambda: |-
+            std::string hex;
+            char b[4];
+            for (auto c : bytes) { snprintf(b, sizeof(b), "%02X ", c); hex += b; }
+            ESP_LOGD("cn105sniff", "MOD %u %s", (unsigned) millis(), hex.c_str());
+
+# Optional: a button in HA to drop a marker into the log ("now switching to COOL"…)
+button:
+  - platform: template
+    name: "Capture marker"
+    on_press:
+      - lambda: 'ESP_LOGI("cn105sniff", "MARK %u", (unsigned) millis());'
