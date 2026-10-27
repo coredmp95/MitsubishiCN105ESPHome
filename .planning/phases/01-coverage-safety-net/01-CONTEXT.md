@@ -44,6 +44,12 @@ Delivered as **two PRs** (see D-17): 1a = coverage tooling + harness + character
   - Phase 2 may start once PR 1a is merged.
 - **D-18:** Layout: **one file per module under `tests/unit/characterization/`** (`test_cycle_management.cpp`, `test_request_scheduler.cpp`, `test_hp_writings.cpp`, `test_climate_controls.cpp`, `test_profile_state.cpp`, …) sharing a **common `TEST_F` fixture** that builds a `CN105Climate` with a fake UART and the test clock. The fixture is designed for reuse by the Phase 2 simulator (SIM-02).
 
+### Post-research decisions (2026-10-27, answers to 01-RESEARCH.md open questions)
+- **D-19:** Characterization harness variants are **`USE_ESP32` + `USE_ESP8266`** (D-04 as written). No separate `USE_HOST` variant.
+- **D-20:** The harness is compiled **`-m32`** (ILP32, so `unsigned long` is 4 bytes as on ESP). CI installs `g++-multilib` and pins `runs-on: ubuntu-24.04`. The coverage baseline is taken from the first CI run, not from a local machine.
+- **D-21:** Tests reach `CN105Climate` private members with **`-fno-access-control` on test translation units only**. No change to `components/cn105/cn105.h`.
+- **D-22:** Harness log level is **`ESPHOME_LOG_LEVEL_VERY_VERBOSE`** (`deferCycle()` = 1500 ms is pinned under this level).
+
 ### Claude's Discretion
 - Exact FetchContent mechanics, the content of the hand-written `defines.h`, and how ESPHome core sources are selected for the host build.
 - Fake UART design (byte capture + scripted RX) and how HA-published state is observed (real ESPHome entity objects vs test listeners).
