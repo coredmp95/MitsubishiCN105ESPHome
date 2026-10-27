@@ -40,7 +40,22 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Each PR shows the coverage of its changed lines, so an untested modification is visible in review without opening the full report.
   4. Characterization tests for `cycle_management`, `request_scheduler`, `hp_writings`/`writePacket`, `climateControls` and the state handling in the profiles pass against the unmodified production code, now compiled into the unit-test build; they pin today's behaviour, known quirks included (absolute-timestamp comparisons, optimistic publish, single pending-packet slot), which later phases flip knowingly.
   5. Phase gate: all pre-existing unit tests still pass, the 7 CI ESPHome configs still compile, and the shipped component's behaviour is unchanged (production edits limited to behaviour-preserving testability seams, if any).
-**Plans**: TBD
+**Plans:** 13 plans (PR 1a: 01-01..01-09, PR 1b: 01-10..01-13)
+
+Plans:
+- [ ] 01-01-PLAN.md — [1a] Host harness: real ESPHome 2026.10.0 core + unmodified cn105 under GoogleTest, ESP32/ESP8266 -m32 variants, test clock, fixture, Docker dev image
+- [ ] 01-02-PLAN.md — [1a] Coverage gate logic in stdlib Python (ratchet, propose, scope, diff 80%, sticky-comment target) with unittest self-test
+- [ ] 01-03-PLAN.md — [1a] tests/unit/coverage.sh single entry point (gcovr reports, scope check, --docker/--ci/--gate), pinned tools after legitimacy checkpoint, provisional baseline
+- [ ] 01-04-PLAN.md — [1a] CI: unit-tests on ubuntu-24.04 with coverage summary/artifact, coverage-gate job (ratchet, diff-cover, label exemption, sticky comment), docs
+- [ ] 01-05-PLAN.md — [1a] Characterization: cycle_management + request_scheduler (BUG-01, BUG-07)
+- [ ] 01-06-PLAN.md — [1a] Characterization: hp_writings / writePacket / pending packet (BUG-03, BUG-04)
+- [ ] 01-07-PLAN.md — [1a] Characterization: climateControls command path and platform locking (BUG-03, BUG-08)
+- [ ] 01-08-PLAN.md — [1a] Characterization: profile state handling (HeatPump + Lossnay)
+- [ ] 01-09-PLAN.md — [1a] PR 1a on the fork: CI-derived baseline, live gate demonstration (D-13/D-14)
+- [ ] 01-10-PLAN.md — [1b] Remote-temperature path (BUG-02) + real-capture decision checkpoint
+- [ ] 01-11-PLAN.md — [1b] Connection lifecycle and read/decode paths (BUG-05, BUG-08)
+- [ ] 01-12-PLAN.md — [1b] Entities, installer hardware settings, Lossnay specifics
+- [ ] 01-13-PLAN.md — [1b] PR 1b on the fork: ratcheted CI baseline, phase gate
 
 ### Phase 2: Heat Pump Simulator
 **Goal**: Developers can run the real `CN105Climate` against a simulated CN105 heat pump on the host, deterministically and with injectable faults and simulated time, so link and command behaviour can be tested without a real unit or board.
@@ -131,7 +146,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Coverage Safety Net | 0/TBD | Not started | - |
+| 1. Coverage Safety Net | 0/13 | Planned | - |
 | 2. Heat Pump Simulator | 0/TBD | Not started | - |
 | 3. ESPHome Host End-to-End Job | 0/TBD | Not started | - |
 | 4. Critical Timing Fixes | 0/TBD | Not started | - |
