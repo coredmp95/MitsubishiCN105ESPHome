@@ -27,6 +27,7 @@ The heat pump link never silently stalls or lies: polling keeps running indefini
 
 <!-- This milestone = audit phases P1–P5. IDs refer to AUDIT-CN105-2026-10-27.md. -->
 
+- [ ] Coverage safety net first: coverage measured in CI with a ratcheting baseline, diff coverage on PRs, and characterization tests pinning current behaviour of the code to be changed
 - [ ] Critical fixes: `millis()` wrap-safe timing with an injectable clock (BUG-01 + DEBT-07), `std::fabs` for remote-temp margin (BUG-02), initialized fields and `uint32_t` timestamps (BUG-08)
 - [ ] Link reliability: single debounced reconnect and user commands never displaced by info requests (BUG-04), short timeouts and ignoring out-of-sequence responses in the poll cycle (BUG-07), verify-on-board then fix UART port targeting of `force_low_level_uart_reinit` (BUG-05), heat pump unavailability visible in HA (FEAT-01)
 - [ ] Command reliability: in-flight command tracking, confirmation on ACK 0x61 or consistent 0x02 readback, N retries then warning and republish of real state (BUG-03 / FEAT-04); link diagnostics sensors and defrost binary sensor (FEAT-05)
@@ -53,6 +54,7 @@ The heat pump link never silently stalls or lies: polling keeps running indefini
 
 - **Compatibility**: No breaking changes to YAML keys or HA entities; any rename goes through a deprecation warning — existing users must upgrade transparently.
 - **Tests**: All existing unit tests keep passing, and every fixed bug gets a new unit test — the test suite is the main safety net for protocol logic.
+- **Coverage**: Coverage of `components/cn105/` never drops below the recorded baseline, and changed lines are tested — the user's assurance that nothing breaks.
 - **CI**: All 7 CI ESPHome configs (ESP32 + ESP8266) must compile — ESP8266 RAM/flash limits and multi-framework support (ESP-IDF, Arduino) are real.
 - **Testability**: New logic goes into pure functions (`*_protocol.h` style) testable without ESPHome — keeps it under GoogleTest.
 - **Platform**: ESPHome ≥ 2025.7 must keep working via `esphome_compat.h` — supported user base.
@@ -70,6 +72,7 @@ The heat pump link never silently stalls or lies: polling keeps running indefini
 | Injectable clock replaces `CUSTOM_MILLIS` macro | Needed to unit-test wraparound (BUG-01) | — Pending |
 | Verify BUG-05 on the real board before fixing | Audit marks it unconfirmed; user has hardware | — Pending |
 | One PR per phase, no breaking changes | Reviewable, releasable increments for existing users | — Pending |
+| Coverage safety net before fixes/refactor (ratchet baseline + diff coverage + characterization tests) | User wants confidence nothing breaks; the refactor touches poorly isolated code | — Pending |
 
 ## Evolution
 

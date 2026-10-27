@@ -7,6 +7,13 @@ Source: `AUDIT-CN105-2026-10-27.md` (bug/debt/feature IDs in parentheses).
 
 ## v1 Requirements
 
+### Coverage safety net (before any fix or refactor)
+
+- [ ] **COV-01**: CI measures line and branch coverage of `components/cn105/` from the unit tests (gcov/lcov or gcovr) and publishes the report (job summary + artifact)
+- [ ] **COV-02**: A coverage baseline is recorded and CI fails if total coverage of `components/cn105/` drops below it (ratchet: the baseline only goes up)
+- [ ] **COV-03**: Each PR reports coverage of changed lines (diff coverage), so untested modifications are visible in review
+- [ ] **COV-04**: Characterization tests pin the current behaviour of the code the milestone will change (`cycle_management`, `request_scheduler`, `hp_writings`/`writePacket`, `climateControls`, state handling in the profiles) before it is modified
+
 ### Timing (audit P1)
 
 - [ ] **TIME-01**: Polling keeps cycling across a `millis()` wraparound; a unit test with an injectable clock just before/after wrap shows the next cycle starts after `update_interval` (BUG-01, DEBT-07)
@@ -56,6 +63,7 @@ Source: `AUDIT-CN105-2026-10-27.md` (bug/debt/feature IDs in parentheses).
 
 Not separate requirements; every phase's success criteria include them:
 - All existing unit tests pass, and each fixed bug has a new unit test
+- Coverage of `components/cn105/` does not drop below the baseline, and changed lines are covered by tests (diff coverage reviewed in the PR)
 - All 7 CI ESPHome configs (ESP32 + ESP8266) compile
 - No change to existing YAML keys or HA entity IDs (any rename uses a deprecation warning)
 - User-visible additions are documented in the README
@@ -91,9 +99,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | (filled by roadmap) | | |
 
 **Coverage:**
-- v1 requirements: 24 total
+- v1 requirements: 28 total
 - Mapped to phases: 0
-- Unmapped: 24 ⚠️
+- Unmapped: 28 ⚠️
 
 ---
 *Requirements defined: 2026-10-27*
