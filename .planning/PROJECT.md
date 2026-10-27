@@ -60,7 +60,7 @@ The heat pump link never silently stalls or lies: polling keeps running indefini
 - **Testability**: New logic goes into pure functions (`*_protocol.h` style) testable without ESPHome — keeps it under GoogleTest.
 - **Platform**: ESPHome ≥ 2025.7 must keep working via `esphome_compat.h` — supported user base.
 - **Docs**: User-visible changes are documented in the README — per the audit's definition of done.
-- **Delivery**: One PR per phase, each releasable on its own — keeps reviews small and lets fixes ship early.
+- **Delivery**: One PR per phase, each releasable on its own — keeps reviews small and lets fixes ship early. **Recorded exception:** Phase 1 (Coverage Safety Net) ships as two PRs by user decision D-17 (`.planning/phases/01-coverage-safety-net/01-CONTEXT.md`): PR 1a (coverage tooling, gates, harness, characterization of the milestone's target paths; completes COV-01..04) and PR 1b (characterization of the rest of the component). Each of the two PRs is releasable on its own.
 
 ## Key Decisions
 
@@ -72,7 +72,7 @@ The heat pump link never silently stalls or lies: polling keeps running indefini
 | Refactor = cleanup + enum class + finish profile encapsulation, not a god-class split | Lower risk; split can be reconsidered after | — Pending |
 | Injectable clock replaces `CUSTOM_MILLIS` macro | Needed to unit-test wraparound (BUG-01) | — Pending |
 | Verify BUG-05 on the real board before fixing | Audit marks it unconfirmed; user has hardware | — Pending |
-| One PR per phase, no breaking changes | Reviewable, releasable increments for existing users | — Pending |
+| One PR per phase, no breaking changes | Reviewable, releasable increments for existing users | — Pending (exception: Phase 1 = PR 1a + PR 1b, D-17) |
 | Software heat pump simulator at two levels (C++ in GoogleTest + ESPHome host/pty E2E) | Automated tests without a real unit or board; fault injection exercises the link/command bugs | — Pending |
 | Coverage safety net before fixes/refactor (ratchet baseline + diff coverage + characterization tests) | User wants confidence nothing breaks; the refactor touches poorly isolated code | — Pending |
 

@@ -50,6 +50,9 @@ Delivered as **two PRs** (see D-17): 1a = coverage tooling + harness + character
 - **D-21:** Tests reach `CN105Climate` private members with **`-fno-access-control` on test translation units only**. No change to `components/cn105/cn105.h`.
 - **D-22:** Harness log level is **`ESPHOME_LOG_LEVEL_VERY_VERBOSE`** (`deferCycle()` = 1500 ms is pinned under this level).
 
+### Plan-review decisions (2026-10-27, answers to plan-checker warnings)
+- **D-23:** Plan 01-06 (PR 1a) **keeps two synthetic CN105 frames**: the `0x61` ACK (`FC 61 01 30 10` followed by 16 zero bytes) and the `0x7B` installer-mode connect reply (`FC 7B 01 30 01 00`). Both are checksum-valid and labelled `SYNTHETIC` in code comments, because no real capture exists yet. They are replaced by real captures once the user can record them (capture requests go through plan 01-10 and the "Wanted captures" list). The user accepted this explicitly on 2026-10-27, in answer to the plan-checker warning on 01-06; it is a recorded exception to the "flag, don't invent" rule in `<specifics>` for these two frames.
+
 ### Claude's Discretion
 - Exact FetchContent mechanics, the content of the hand-written `defines.h`, and how ESPHome core sources are selected for the host build.
 - Fake UART design (byte capture + scripted RX) and how HA-published state is observed (real ESPHome entity objects vs test listeners).

@@ -42,7 +42,7 @@ created: "2026-10-27"
 | Req ID | Behavior | Test Type | Automated Command | File Exists | Status |
 |--------|----------|-----------|-------------------|-------------|--------|
 | COV-01 | Line + branch coverage of `components/cn105/` published (summary + artifact); one local command | script smoke + CI | `tests/unit/coverage.sh && test -s tests/unit/out/summary.json && test -s tests/unit/out/html/index.html` | ❌ W0 | ⬜ pending |
-| COV-01 | Every `components/cn105/*.cpp` appears in the report (D-10) | script check | `tests/unit/coverage.sh --check-scope` | ❌ W0 | ⬜ pending |
+| COV-01 | Every `components/cn105/*.cpp` and `*.h` appears in the report (D-10; declaration-only headers listed 0/0) | script check | `tests/unit/coverage.sh --check-scope` | ❌ W0 | ⬜ pending |
 | COV-02 | Drop > 0.1 pt fails, rise proposes ratchet (D-14) | unit (Python) | `python3 -m unittest discover -s tests/unit/tools -v` | ❌ W0 | ⬜ pending |
 | COV-02 | Baseline file present, parsable, compared | script check | `python3 tests/unit/tools/coverage_gate.py --summary tests/unit/out/summary.json --baseline tests/unit/coverage-baseline.json` | ❌ W0 | ⬜ pending |
 | COV-03 | Changed-line coverage reported, 80 % blocking, `coverage-exempt` bypass | CI integration | PR run of `coverage-gate` job; local: `diff-cover tests/unit/out/coverage.xml --compare-branch=origin/main` | ❌ W0 | ⬜ pending |
