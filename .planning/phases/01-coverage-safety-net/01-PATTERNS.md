@@ -16,8 +16,8 @@ All analog paths below were verified git-tracked (`git ls-files tests/unit`). `.
 | `tests/unit/harness/CMakeLists.txt` | config (build) | batch | `tests/unit/CMakeLists.txt` | role-match |
 | `tests/unit/harness/overlay/esphome/core/defines.h`, `version.h`, `esphome.h`, `esphome/components/wifi/wifi_component.h` | config (header overlay) | transform | `tests/unit/mocks/esphome/core/version.h` | partial (same role, but real-core overlay instead of mock) |
 | `tests/unit/harness/shim_esp32/**`, `shim_esp8266/**` | utility (platform shim headers) | transform | `tests/unit/mocks/esphome_stubs.h` | partial |
-| `tests/unit/harness/platform/test_clock.{h,cpp}` | utility (test clock) | event-driven | none (see No Analog); seam is `Globals.h:11-12` | none |
-| `tests/unit/harness/platform/test_log.cpp`, `test_prefs_*.cpp`, `stubs_esp32.cpp`, `stubs_esp8266.cpp` | utility (link stubs) | request-response | `tests/unit/mocks/esphome_stubs.h` | partial |
+| `tests/unit/harness/platform/test_platform.{h,cpp}` (test clock, log capture, in-memory preferences, Wi-Fi stub; one file pair since the 2026-10-27 plan split) | utility (test clock + platform control) | event-driven | none (see No Analog); seam is `Globals.h:11-12` | none |
+| `tests/unit/harness/platform/stubs_esp32.cpp`, `stubs_esp8266.cpp` | utility (link stubs) | request-response | `tests/unit/mocks/esphome_stubs.h` | partial |
 | `tests/unit/characterization/fixture.{h,cpp}` | test (fixture + FakeUart) | event-driven | none for `TEST_F`; RESEARCH.md "Fixture skeleton" | none |
 | `tests/unit/characterization/test_cycle_management.cpp` | test | request-response | `tests/unit/test_frame_parser.cpp` (style) + `components/cn105/cycle_management.cpp` (subject) | role-match |
 | `tests/unit/characterization/test_request_scheduler.cpp` | test | event-driven | `tests/unit/test_frame_parser.cpp` | role-match |
@@ -184,7 +184,7 @@ Harness log level `ESPHOME_LOG_LEVEL_VERY_VERBOSE` (D-22); time only through the
 
 | File | Role | Data Flow | Reason |
 |---|---|---|---|
-| `harness/platform/test_clock.*` | utility | event-driven | No test clock exists; use RESEARCH Pattern 2 |
+| `harness/platform/test_platform.*` | utility | event-driven | No test clock exists; use RESEARCH Pattern 2 |
 | `characterization/fixture.*` | fixture | event-driven | No `TEST_F`/`App` harness exists; RESEARCH.md lines 380-426 |
 | `harness/shim_esp32/**`, `shim_esp8266/**`, link stubs | shim | transform | Only the light `mocks/` exist; shim surface listed in RESEARCH "Platform Variants" |
 | `coverage.sh`, `coverage_gate.py`, `coverage-baseline.json`, `requirements-coverage.txt` | tooling | batch | No coverage tooling or scripts exist yet; RESEARCH gcovr commands |

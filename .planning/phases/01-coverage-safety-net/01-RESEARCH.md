@@ -222,7 +222,7 @@ tests/unit/
 │   ├── overlay/                   # esphome.h, esphome/core/{defines,version}.h, esphome/components/wifi/wifi_component.h
 │   ├── shim_esp32/                # freertos/*, driver/*, esp_*.h, sdkconfig.h, soc/soc_caps.h
 │   ├── shim_esp8266/              # pgmspace.h, c_types.h, core_esp8266_features.h, Esp.h, WString.h, coredecls.h
-│   └── platform/                  # test_clock.{h,cpp}, test_log.cpp, test_prefs_<v>.cpp, stubs_esp32.cpp, stubs_esp8266.cpp
+│   └── platform/                  # test_platform.{h,cpp} (clock, log, prefs, wifi), stubs_esp32.cpp, stubs_esp8266.cpp (layout as planned)
 ├── characterization/
 │   ├── fixture.{h,cpp}            # Cn105Fixture (TEST_F), FakeUart, frame helpers
 │   ├── test_cycle_management.cpp
@@ -526,6 +526,7 @@ All scenarios drive the real objects through `FakeUart` + `TestClock` + `App.sch
 
 ### Real-capture flags (CONTEXT: "flag explicitly rather than inventing frames")
 - **PR 1a needs no new capture.** Everything it pins is covered by the frames already in `tests/unit/` (0x7A reply, 0x62 replies 0x02/0x03/0x06/0x09/0x04, the Lossnay 0x34 frames) or by frames the production code generates itself.
+- **Planning note (2026-10-27):** the repo holds no Lossnay handshake reply (`0x7A` with profile byte `0x34`, required by `LossnayProtocol::accepts_handshake`). Plan 01-10 does not invent one: it pins the rejection of the real heat-pump reply, reaches the connected state through the production `handleConnectionSuccess()`, and lists the Lossnay reply as a wanted capture, requested by plan 01-12.
 - **Synthetic, label them as such in the test comment:** the `0x61` ACK frame and the `0x7B` installer-handshake reply (no capture exists in the repo; the production code ignores the ACK payload and only checks `command` / `raw()[3]` for the handshake, so a checksum-valid synthetic frame does not change the pinned behaviour).
 - **Capture needed before PR 1b can assert real decoding (ask the user):** (1) `0x42` HVAC-options reply (air purifier / night mode / circulator switches) from a unit that supports it; (2) `0x20` / `0x22` functions replies for the installer-mode hardware-settings selects (only negative-length cases exist in `test_profiles.cpp`); (3) a real `0x61` ACK following a `0x41` SET and following a `0x07` remote-temperature packet (also valuable for Phase 6 CMD-02); (4) a DEFROST sub-mode `0x09` reply (only an image, `captures/capture_stage and submode.png`, exists). Until then 1b should limit itself to paths exercised by existing frames and mark any synthetic frame.
 
@@ -552,18 +553,27 @@ All scenarios drive the real objects through `FakeUart` + `TestClock` + `App.sch
 | A6 | A synthetic checksum-valid `0x61` / `0x7B` frame is behaviourally equivalent to a real one for the code paths pinned in 1a | Real-capture flags | If `processCommand`/profile ever inspects ACK payload bytes, the pin would be incomplete (Phase 6 will need real ACKs) |
 | A7 | `GITHUB_TOKEN` can be given `pull-requests: write` at job level for `issues` comment endpoints | CI layout | Use `issues: write` additionally (comments are issue comments) — verify on the first PR |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All seven questions were answered by the user on 2026-10-27 (CONTEXT.md D-19..D-22) or settled at planning time under Claude's discretion; each carries its resolution pointer below. None remains open.
 
 1. **D-04 literal reading: is a true `USE_ESP8266` shim variant worth its fidelity cost?**
    - What we know: it compiles, links and runs (6 headers, ~15 stubs); `cn105` code only distinguishes `USE_ESP32` vs not, so HOST already executes the same cn105 paths as ESP8266.
    - What's unclear: whether the user wants the extra ESPHome-level ESP8266 surface (`ESPHOME_THREAD_SINGLE`, `Millis64Impl`) in the loop.
    - Recommendation: implement ESP32 + ESP8266 exactly as D-04 says; keep HOST as an optional third smoke build (zero shim) only if cheap.
+   - **RESOLVED → D-19:** variants are `USE_ESP32` + `USE_ESP8266`, no separate `USE_HOST` variant. Implemented by plans 01-01 (ESP32) and 01-03 (ESP8266).
 2. **Adopt `-m32` for the characterization build?** Recommended (Pitfall 1). It adds `g++-multilib` to CI and local Docker; it deviates from nothing in CONTEXT but changes the fidelity story, so confirm with the user.
+   - **RESOLVED → D-20:** harness compiled `-m32`; CI installs `g++-multilib` and pins `runs-on: ubuntu-24.04` (plan 01-06); the local Docker dev image provides it (plan 01-01).
 3. **Seam choice:** `-fno-access-control` on test TUs (no production edit, GCC-only) vs one-word `private:` -> `protected:` at `cn105.h:391` (D-03-sanctioned fallback). Recommend the flag; decide before writing the fixture.
+   - **RESOLVED → D-21:** `-fno-access-control` on test translation units only, no change to `components/cn105/cn105.h` (plan 01-01).
 4. **CI job layout:** two jobs (`unit-tests` + `coverage-gate`) vs one. Recommended: two.
+   - **RESOLVED → plan 01-06 (Claude's discretion, CONTEXT.md):** two jobs, `unit-tests` (64-bit pure tests + coverage run) and `coverage-gate` (ratchet, diff coverage, label exemption, sticky comment); `esphome-build` still `needs: unit-tests`.
 5. **First baseline value:** must come from a CI run on `ubuntu-24.04`; sequence inside PR 1a: land tooling + harness smoke -> take baseline v0 from CI -> add characterization suites -> ratchet the committed baseline before opening review.
+   - **RESOLVED → D-20 + plan 01-11:** the committed baseline comes from the first `ubuntu-24.04` CI run, never from a local machine. Plan 01-05 commits a provisional baseline; plan 01-11 replaces it with the values proposed by the first CI run of the complete PR 1a (characterization included), which makes the intermediate v0 step unnecessary; plan 01-15 ratchets it again from the PR 1b CI run.
 6. **`ESPHOME_LOG_LEVEL`:** VERY_VERBOSE (max instrumented lines, deferral 1500 ms) vs DEBUG. Recommendation above; confirm.
+   - **RESOLVED → D-22:** `ESPHOME_LOG_LEVEL_VERY_VERBOSE` (plan 01-01 overlay `defines.h`); the 1500 ms `deferCycle()` delay is pinned under this level (plan 01-07).
 7. **Do existing pure tests also run in the 32-bit build?** They pass under `-m32` (verified); running them inside the same coverage build simplifies `coverage.sh` (one build dir) but keep the original 64-bit job path untouched as the fast gate.
+   - **RESOLVED → plans 01-01, 01-02, 01-05 (Claude's discretion, CONTEXT.md):** the 64-bit pure-test build stays unchanged as the fast gate (plan 01-01, kept in CI by plan 01-06); in the `-m32` coverage build the pure tests are also compiled and run, instrumented by `CN105_COVERAGE` (plan 01-02) and read as the `pure` tracefile by `coverage.sh` (plan 01-05), so the coverage run uses one build dir.
 
 ## Environment Availability
 
