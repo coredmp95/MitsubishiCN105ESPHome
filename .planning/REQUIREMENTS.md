@@ -105,13 +105,46 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (filled by roadmap) | | |
+| COV-01 | Phase 1 | Pending |
+| COV-02 | Phase 1 | Pending |
+| COV-03 | Phase 1 | Pending |
+| COV-04 | Phase 1 | Pending |
+| SIM-01 | Phase 2 | Pending |
+| SIM-02 | Phase 2 | Pending |
+| SIM-03 | Phase 2 | Pending |
+| SIM-04 | Phase 2 | Pending |
+| SIM-05 | Phase 2 | Pending |
+| SIM-06 | Phase 3 | Pending |
+| TIME-01 | Phase 4 | Pending |
+| TIME-02 | Phase 4 | Pending |
+| TIME-03 | Phase 4 | Pending |
+| TIME-04 | Phase 4 | Pending |
+| LINK-01 | Phase 5 | Pending |
+| LINK-02 | Phase 5 | Pending |
+| LINK-03 | Phase 5 | Pending |
+| LINK-04 | Phase 5 | Pending |
+| LINK-05 | Phase 5 | Pending |
+| LINK-06 | Phase 5 | Pending |
+| CMD-01 | Phase 6 | Pending |
+| CMD-02 | Phase 6 | Pending |
+| CMD-03 | Phase 6 | Pending |
+| CMD-04 | Phase 6 | Pending |
+| DIAG-01 | Phase 6 | Pending |
+| DIAG-02 | Phase 6 | Pending |
+| CLEAN-01 | Phase 7 | Pending |
+| CLEAN-02 | Phase 7 | Pending |
+| CLEAN-03 | Phase 7 | Pending |
+| CLEAN-04 | Phase 7 | Pending |
+| CI-01 | Phase 7 | Pending |
+| CI-02 | Phase 7 | Pending |
+| TYPE-01 | Phase 8 | Pending |
+| TYPE-02 | Phase 8 | Pending |
 
 **Coverage:**
 - v1 requirements: 34 total
-- Mapped to phases: 0
-- Unmapped: 34 ⚠️
+- Mapped to phases: 34
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-10-27*
-*Last updated: 2026-10-27 after initial definition*
+*Last updated: 2026-10-27 after roadmap creation*
