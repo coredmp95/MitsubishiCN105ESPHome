@@ -25,7 +25,7 @@ The heat pump link never silently stalls or lies: polling keeps running indefini
 
 ### Active
 
-<!-- This milestone = audit phases P1–P5. IDs refer to AUDIT-CN105-2026-10-27.md. -->
+<!-- This milestone = audit phases P1–P5. IDs refer to .planning/AUDIT-CN105-2026-10-27.md. -->
 
 - [ ] Coverage safety net first: coverage measured in CI with a ratcheting baseline, diff coverage on PRs, and characterization tests pinning current behaviour of the code to be changed
 - [ ] Heat pump simulator: software CN105 unit (nominal protocol, fault injection, real-frame replay, simulated time) driving the real `CN105Climate` in GoogleTest, plus an end-to-end ESPHome `host` + pty job in CI — automated tests without a real heat pump or board
@@ -44,7 +44,7 @@ The heat pump link never silently stalls or lies: polling keeps running indefini
 ## Context
 
 - Brownfield; codebase map in `.planning/codebase/` (STACK, ARCHITECTURE, STRUCTURE, CONVENTIONS, TESTING, INTEGRATIONS, CONCERNS), mapped at commit `5250ba7`.
-- Source of the work: `AUDIT-CN105-2026-10-27.md` (repo root, French). It gives cause, expected fix and acceptance criteria per bug, and proposes the phase split P1–P6 this milestone follows (P1 critical → P2 link → P3 commands; P4 cleanup after P1, independent of P2/P3; P5 typing after P3 and P4).
+- Source of the work: `.planning/AUDIT-CN105-2026-10-27.md` (French). It gives cause, expected fix and acceptance criteria per bug, and proposes the phase split P1–P6 this milestone follows (P1 critical → P2 link → P3 commands; P4 cleanup after P1, independent of P2/P3; P5 typing after P3 and P4).
 - Bugs confirmed in code by the concerns mapper: BUG-01, BUG-02, BUG-03, BUG-04, BUG-09. BUG-05 needs on-board verification; BUG-06/07 are from code reading.
 - Architecture anti-patterns noted in the map: god class `CN105Climate` across many translation units (~60 public fields, `friend class`), duplicate/stale protocol-state flags, raw protocol bytes written outside the write path, mojibake comments.
 - `tests/unit/test_checksum.cpp` reimplements `checkSum()` instead of testing production code. No formatter/linter config is tracked.

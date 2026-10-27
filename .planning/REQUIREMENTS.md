@@ -3,7 +3,7 @@
 **Defined:** 2026-10-27
 **Core Value:** The heat pump link never silently stalls or lies: polling keeps running indefinitely, user commands are either applied or visibly reported as failed, and Home Assistant shows the heat pump's real state (or "unavailable"), never stale or optimistic values.
 
-Source: `AUDIT-CN105-2026-10-27.md` (bug/debt/feature IDs in parentheses).
+Source: `.planning/AUDIT-CN105-2026-10-27.md` (bug/debt/feature IDs in parentheses).
 
 ## v1 Requirements
 

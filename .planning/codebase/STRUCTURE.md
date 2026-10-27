@@ -35,7 +35,7 @@ MitsubishiCN105ESPHome/
 └── .gitignore
 ```
 
-Untracked scratch folders present at analysis time and excluded from this map: `.serena/` and `AUDIT-CN105-2026-10-27.md`.
+Untracked scratch folders present at analysis time and excluded from this map: `.serena/`. The audit `AUDIT-CN105-2026-10-27.md` was later moved to `.planning/`.
 
 ## Directory Purposes
 

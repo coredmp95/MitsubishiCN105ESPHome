@@ -8,7 +8,7 @@ last_mapped_at: 2026-10-27
 
 Scope: full repository. Main code under analysis is the ESPHome component `components/cn105/` (about 8,100 lines of C++ and Python), the HA integration `custom_components/mitsubishi_climate_proxy/`, the unit tests in `tests/unit/`, and the CI workflow `.github/workflows/build.yaml`.
 
-Verification note: `AUDIT-CN105-2026-10-27.md` (untracked, repo root) was used as an input. Each item below was re-checked against the code. Items marked **[verified in code]** were confirmed by reading the cited lines. Items marked **[verified by probe]** were also reproduced with a small program. Items marked **[audit only]** were not re-checked on hardware or in a running build.
+Verification note: `.planning/AUDIT-CN105-2026-10-27.md` (then untracked at repo root) was used as an input. Each item below was re-checked against the code. Items marked **[verified in code]** were confirmed by reading the cited lines. Items marked **[verified by probe]** were also reproduced with a small program. Items marked **[audit only]** were not re-checked on hardware or in a running build.
 
 ## Tech Debt
 
