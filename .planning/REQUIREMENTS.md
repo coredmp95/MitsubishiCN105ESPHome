@@ -14,6 +14,15 @@ Source: `AUDIT-CN105-2026-10-27.md` (bug/debt/feature IDs in parentheses).
 - [ ] **COV-03**: Each PR reports coverage of changed lines (diff coverage), so untested modifications are visible in review
 - [ ] **COV-04**: Characterization tests pin the current behaviour of the code the milestone will change (`cycle_management`, `request_scheduler`, `hp_writings`/`writePacket`, `climateControls`, state handling in the profiles) before it is modified
 
+### Heat pump simulator (no real unit, no real board)
+
+- [ ] **SIM-01**: A software CN105 heat pump simulator implements the nominal protocol — connect 0x5A/0x7A, answers to info requests 0x02/0x03/0x04/0x06, applies 0x41 commands with ACK 0x61, keeps a consistent internal state
+- [ ] **SIM-02**: The simulator plugs into the real `CN105Climate` in GoogleTest through a fake UART and the injectable clock, so end-to-end component tests run on the host, deterministically, in CI
+- [ ] **SIM-03**: Tests can inject faults — lost or late responses, corrupted checksum, disconnect, missing ACK — to exercise reconnect, timeouts and command retry (BUG-03/04/07)
+- [ ] **SIM-04**: The simulator can replay real captured frames (`captures/` and real frames already used in unit tests)
+- [ ] **SIM-05**: Time is simulated and test-controlled (incl. `millis()` wraparound and timeouts) — no real-time waits
+- [ ] **SIM-06**: An end-to-end CI job compiles the component for the ESPHome `host` platform and runs it against the simulator over a virtual serial port (pty), covering YAML/codegen and the real ESPHome loop
+
 ### Timing (audit P1)
 
 - [ ] **TIME-01**: Polling keeps cycling across a `millis()` wraparound; a unit test with an injectable clock just before/after wrap shows the next cycle starts after `update_interval` (BUG-01, DEBT-07)
@@ -99,9 +108,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | (filled by roadmap) | | |
 
 **Coverage:**
-- v1 requirements: 28 total
+- v1 requirements: 34 total
 - Mapped to phases: 0
-- Unmapped: 28 ⚠️
+- Unmapped: 34 ⚠️
 
 ---
 *Requirements defined: 2026-10-27*

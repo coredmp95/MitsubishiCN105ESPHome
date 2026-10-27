@@ -28,6 +28,7 @@ The heat pump link never silently stalls or lies: polling keeps running indefini
 <!-- This milestone = audit phases P1–P5. IDs refer to AUDIT-CN105-2026-10-27.md. -->
 
 - [ ] Coverage safety net first: coverage measured in CI with a ratcheting baseline, diff coverage on PRs, and characterization tests pinning current behaviour of the code to be changed
+- [ ] Heat pump simulator: software CN105 unit (nominal protocol, fault injection, real-frame replay, simulated time) driving the real `CN105Climate` in GoogleTest, plus an end-to-end ESPHome `host` + pty job in CI — automated tests without a real heat pump or board
 - [ ] Critical fixes: `millis()` wrap-safe timing with an injectable clock (BUG-01 + DEBT-07), `std::fabs` for remote-temp margin (BUG-02), initialized fields and `uint32_t` timestamps (BUG-08)
 - [ ] Link reliability: single debounced reconnect and user commands never displaced by info requests (BUG-04), short timeouts and ignoring out-of-sequence responses in the poll cycle (BUG-07), verify-on-board then fix UART port targeting of `force_low_level_uart_reinit` (BUG-05), heat pump unavailability visible in HA (FEAT-01)
 - [ ] Command reliability: in-flight command tracking, confirmation on ACK 0x61 or consistent 0x02 readback, N retries then warning and republish of real state (BUG-03 / FEAT-04); link diagnostics sensors and defrost binary sensor (FEAT-05)
@@ -72,6 +73,7 @@ The heat pump link never silently stalls or lies: polling keeps running indefini
 | Injectable clock replaces `CUSTOM_MILLIS` macro | Needed to unit-test wraparound (BUG-01) | — Pending |
 | Verify BUG-05 on the real board before fixing | Audit marks it unconfirmed; user has hardware | — Pending |
 | One PR per phase, no breaking changes | Reviewable, releasable increments for existing users | — Pending |
+| Software heat pump simulator at two levels (C++ in GoogleTest + ESPHome host/pty E2E) | Automated tests without a real unit or board; fault injection exercises the link/command bugs | — Pending |
 | Coverage safety net before fixes/refactor (ratchet baseline + diff coverage + characterization tests) | User wants confidence nothing breaks; the refactor touches poorly isolated code | — Pending |
 
 ## Evolution
