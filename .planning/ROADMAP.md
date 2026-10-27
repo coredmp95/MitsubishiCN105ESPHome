@@ -43,21 +43,41 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans:** 15 plans (PR 1a: 01-01..01-11, PR 1b: 01-12..01-15)
 
 Plans:
+**Wave 1**
 - [ ] 01-01-PLAN.md — [1a] Host harness tracer: real ESPHome 2026.10.0 core + unmodified cn105 under GoogleTest, ESP32 -m32 variant, test clock and platform control API, fixture base, Docker dev image
-- [ ] 01-02-PLAN.md — [1a] Harness fixture completion (handshake, poll cycle, command, publishes, real frames), run-harness.sh, CN105_COVERAGE + coverage-only header TUs
-- [ ] 01-03-PLAN.md — [1a] Harness ESP8266 -m32 variant: shims, stubs, smoke suite and coverage instrumentation on both variants
 - [ ] 01-04-PLAN.md — [1a] Coverage gate logic in stdlib Python (ratchet, propose, scope, diff 80%, sticky-comment target) with unittest self-test
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 01-02-PLAN.md — [1a] Harness fixture completion (handshake, poll cycle, command, publishes, real frames), run-harness.sh, CN105_COVERAGE + coverage-only header TUs
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 01-03-PLAN.md — [1a] Harness ESP8266 -m32 variant: shims, stubs, smoke suite and coverage instrumentation on both variants
+
+**Wave 4** *(blocked on Wave 3 completion)*
 - [ ] 01-05-PLAN.md — [1a] tests/unit/coverage.sh single entry point (gcovr reports, scope check, --docker/--ci/--gate), pinned tools after legitimacy checkpoint, provisional baseline
-- [ ] 01-06-PLAN.md — [1a] CI: unit-tests on ubuntu-24.04 with coverage summary/artifact, coverage-gate job (ratchet, diff-cover, label exemption, sticky comment), docs
 - [ ] 01-07-PLAN.md — [1a] Characterization: cycle_management + request_scheduler (BUG-01, BUG-07)
 - [ ] 01-08-PLAN.md — [1a] Characterization: hp_writings / writePacket / pending packet (BUG-03, BUG-04)
 - [ ] 01-09-PLAN.md — [1a] Characterization: climateControls command path and platform locking (BUG-03, BUG-08)
 - [ ] 01-10-PLAN.md — [1a] Characterization: profile state handling (HeatPump + Lossnay)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 01-06-PLAN.md — [1a] CI: unit-tests on ubuntu-24.04 with coverage summary/artifact, coverage-gate job (ratchet, diff-cover, label exemption, sticky comment), docs
+
+**Wave 6** *(blocked on Wave 5 completion)*
 - [ ] 01-11-PLAN.md — [1a] PR 1a on the fork: CI-derived baseline, live gate demonstration (D-13/D-14)
+
+**Wave 7** *(blocked on Wave 6 completion)*
 - [ ] 01-12-PLAN.md — [1b] Remote-temperature path (BUG-02) + real-capture decision checkpoint
+
+**Wave 8** *(blocked on Wave 7 completion)*
 - [ ] 01-13-PLAN.md — [1b] Connection lifecycle and read/decode paths (BUG-05, BUG-08)
 - [ ] 01-14-PLAN.md — [1b] Entities, installer hardware settings, Lossnay specifics
+
+**Wave 9** *(blocked on Wave 8 completion)*
 - [ ] 01-15-PLAN.md — [1b] PR 1b on the fork: ratcheted CI baseline, phase gate
+
+**Cross-cutting constraints:**
+- components/cn105 is unchanged by this plan (D-03)
 
 ### Phase 2: Heat Pump Simulator
 **Goal**: Developers can run the real `CN105Climate` against a simulated CN105 heat pump on the host, deterministically and with injectable faults and simulated time, so link and command behaviour can be tested without a real unit or board.
@@ -148,7 +168,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Coverage Safety Net | 0/13 | Planned | - |
+| 1. Coverage Safety Net | 0/15 | Planned | - |
 | 2. Heat Pump Simulator | 0/TBD | Not started | - |
 | 3. ESPHome Host End-to-End Job | 0/TBD | Not started | - |
 | 4. Critical Timing Fixes | 0/TBD | Not started | - |
