@@ -1343,7 +1343,7 @@ Since ESPHome 2026.4.0, a native `mitsubishi_cn105` component (by [@crnjan](http
 | **Frame parsing**          |                                    Inline in main class, overflow-protected (64-byte buffer)                                    |         Encapsulated `FrameParser` class, template callback-based (32-byte buffer)         |
 | **Type safety**            |                                     `const char*` parallel arrays (legacy SwiCago pattern)                                      |                    `enum class` + `std::optional` + `constexpr` lookup                     |
 | **Temperature encoding**   |                                                 Dual A/B encoding, auto-detect                                                  |                               Dual A/B encoding, auto-detect                               |
-| **Unit test suite**        |                                                    ❌ (community-validated)                                                     |                                 ✅ Full C++ test coverage                                  |
+| **Unit test suite**        |                                                    ❌ (community-validated)                                                     |                                 ✅ GoogleTest suite, coverage measured in CI              |
 | **ESPHome API stability**  |                                        ⚠️ May require updates on ESPHome major releases                                         |                      ✅ Maintained by core team, no breaking changes                       |
 | **Binary size**            |                                             ~5900 lines C++ (all features included)                                             |                            ~700 lines C++ (minimal feature set)                            |
 | **Codebase maturity**      |                                           2+ years, 600+ issues/PRs, active community                                           |                           Released April 2026, rapidly evolving                            |
@@ -1389,6 +1389,16 @@ Refer to these for further understanding:
 - [ESPHome Custom Climate Components](https://esphome.io/components/climate/custom.html)
 - [ESPHome External Components](https://esphome.io/components/external_components.html)
 - [ESPHome's Climate Component Source](https://github.com/esphome/esphome/tree/master/esphome/components/climate)
+
+---
+
+## Development: tests and coverage
+
+The C++ protocol code is covered by a GoogleTest suite and by a characterization harness that runs the real
+`CN105Climate` on the real ESPHome core. Line and branch coverage of `components/cn105/` is measured and
+published by CI on every run; a pull request may not lower it and must cover 80% of the lines it changes.
+To reproduce the CI report on your machine, run `tests/unit/coverage.sh --docker` (needs Docker only).
+Details, the ratchet and exemption procedures are in [tests/unit/README.md](tests/unit/README.md).
 
 ---
 
