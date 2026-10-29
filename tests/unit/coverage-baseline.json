@@ -1,0 +1,12 @@
+{
+  "line": 0.0,
+  "branch": 0.0,
+  "provisional": true,
+  "toolchain": {
+    "gcc": "13.3.0",
+    "gcovr": "8.6",
+    "esphome": "2026.10.0",
+    "os": "ubuntu 24.04"
+  },
+  "source": "provisional - replaced by the first ubuntu-24.04 CI run in plan 01-11 (D-20)"
+}

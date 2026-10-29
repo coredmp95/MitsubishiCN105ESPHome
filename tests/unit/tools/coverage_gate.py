@@ -412,6 +412,7 @@ def cmd_scope(args):
 # ═══════════════════════════════════════════════════════════════════════════
 
 NO_LINES_HEADING = "Headers with no executable lines (0/0)"
+NO_LINES_SOURCES_HEADING = "Sources with no executable lines (0/0)"
 XML_DECL = re.compile(r"^\s*(<\?xml[^>]*\?>)")
 XML_DOCTYPE = re.compile(r"<!DOCTYPE[^>]*>")
 
@@ -546,7 +547,7 @@ def cmd_complete(args):
     added = [
         path
         for path in source_files(args.source_dir)
-        if path.endswith(".h") and path not in reported and path in manifest
+        if path.endswith((".h", ".cpp")) and path not in reported and path in manifest
     ]
 
     if added:
@@ -560,12 +561,25 @@ def cmd_complete(args):
         atomic_write(args.summary, summary_text)
         atomic_write(args.cobertura, xml_text)
 
-    lines = [NO_LINES_HEADING + ":"] if added else ["No header needed a 0/0 entry."]
-    lines.extend("- %s" % path for path in added)
+    # A .cpp can also be empty of executable lines (an include and a comment only, e.g. info_request.cpp):
+    # gcov emits no record for it, so it is listed 0/0 like a declaration-only header, under its own heading.
+    added_headers = [p for p in added if p.endswith(".h")]
+    added_sources = [p for p in added if p.endswith(".cpp")]
+    lines = []
+    if added_headers:
+        lines.append(NO_LINES_HEADING + ":")
+        lines.extend("- %s" % path for path in added_headers)
+    if added_sources:
+        if lines:
+            lines.append("")
+        lines.append(NO_LINES_SOURCES_HEADING + ":")
+        lines.extend("- %s" % path for path in added_sources)
+    if not added:
+        lines = ["No header needed a 0/0 entry."]
     text = "\n".join(lines) + "\n"
     print(text, end="")
     if args.markdown:
-        write_text(args.markdown, ("### %s\n\n" % NO_LINES_HEADING if added else "") + text)
+        write_text(args.markdown, ("### %s\n\n" % NO_LINES_HEADING if added_headers else "") + text)
     return 0
 
 

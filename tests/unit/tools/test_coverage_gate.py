@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from fractions import Fraction
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -500,7 +501,7 @@ class CompleteTest(ScopeCompleteTestCase):
         self.assertIsNotNone(new_class.find("methods"))
         self.assertEqual(len(root.findall("./packages/package")), 1)
 
-    def test_complete_never_adds_cpp_or_unlisted_header(self):
+    def test_complete_never_adds_unlisted_cpp_or_unlisted_header(self):
         self.setup_case(["components/cn105/a.h"])  # b.h not listed, d.cpp is a source
         before_summary = self.read("summary.json")
         before_xml = self.read("cobertura.xml")
@@ -514,6 +515,25 @@ class CompleteTest(ScopeCompleteTestCase):
         self.assertEqual(scope.returncode, 1)
         self.assertIn("components/cn105/d.cpp", scope.stdout)
         self.assertIn("components/cn105/b.h", scope.stdout)
+
+    def test_complete_adds_manifest_listed_empty_cpp_as_zero_zero(self):
+        # An include-only .cpp (info_request.cpp in the real tree) has no gcov record at all, yet its
+        # object was compiled: the manifest lists it and it is reported 0/0 under its own heading.
+        self.setup_case(["components/cn105/b.h", "components/cn105/d.cpp"])
+        r = self.complete()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("Sources with no executable lines (0/0)", r.stdout)
+        self.assertIn("components/cn105/d.cpp", r.stdout)
+        with open(self.path("summary.json"), encoding="utf-8") as fh:
+            by_name = {f["filename"]: f for f in json.load(fh)["files"]}
+        self.assertTrue(by_name["components/cn105/d.cpp"]["no_executable_lines"])
+        self.assertEqual(by_name["components/cn105/d.cpp"]["line_total"], 0)
+        root = ET.parse(self.path("cobertura.xml")).getroot()
+        self.assertIn("components/cn105/d.cpp", {c.get("filename") for c in root.iter("class")})
+        scope = self.run_cli(
+            "scope", "--summary", self.path("summary.json"), "--source-dir", "components/cn105", cwd=self.tmp
+        )
+        self.assertEqual(scope.returncode, 0, scope.stdout)
 
     def test_complete_then_scope_names_only_the_missing_cpp(self):
         self.setup_case(["components/cn105/b.h"])
