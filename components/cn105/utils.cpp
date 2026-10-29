@@ -508,3 +508,10 @@ void CN105Climate::testMutex() {
 }
 
 #endif
+
+// Throwaway coverage-gate probe (plan 01-11): never called, never merged.
+int cn105_coverage_gate_probe(int value) {
+    int doubled = value * 2;
+    int shifted = doubled + 7;
+    return shifted - value;
+}
