@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 1
 current_phase_name: Coverage Safety Net
 status: executing
-stopped_at: Completed 01-11-PLAN.md
-last_updated: "2026-10-29T22:19:57.515Z"
+stopped_at: Completed 01-12-PLAN.md
+last_updated: "2026-10-29T22:51:17.668Z"
 last_activity: 2026-10-29
 last_activity_desc: Phase 1 execution started
-state_head: 5bb49734bc163fbcc20b8cc6aa9a9adb166e39b8
+state_head: bab393de1714d5ccdacd1a22d759e70a56d9e9c2
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 15
-  completed_plans: 11
+  completed_plans: 12
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-27)
 ## Current Position
 
 Phase: 1 (Coverage Safety Net) — EXECUTING
-Plan: 12 of 15
+Plan: 13 of 15
 Status: Ready to execute
 Last activity: 2026-10-29 — Phase 1 execution started
 
@@ -67,6 +67,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P05 | 7 min | 3 tasks | 6 files |
 | Phase 01 P06 | 12 min | 3 tasks | 4 files |
 | Phase 01 P11 | 40 min | 3 tasks | 1 files |
+| Phase 1 P12 | 60min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -95,6 +96,7 @@ Recent decisions affecting current work:
 - [Phase 01]: 01-05: coverage.sh exit precedence test failure (1) > scope (3) > ratchet gate (5); --ci skips virtualenv and Docker re-exec
 - [Phase 01]: 01-06: upload-artifact@v7 and download-artifact@v8 (independent latest majors); sticky PR comment built for every PR but posted only for same-repo PRs, comment failure is a warning
 - [Phase 01]: 01-11: .planning/ commits stay in PR 1a (#2, draft on coredmp95 fork); baseline CI-derived from run 40960306032 (line 67.05, branch 60.08); gate demonstrated on closed probe PR #3
+- [Phase 1]: [01-12] Capture decision existing-only: D-23 synthetic 0x61/0x7B frames stay, captured_frames_1b.h left empty, 11 wanted captures recorded in tests/unit/README.md
 
 ### Pending Todos
 
@@ -117,6 +119,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-29T22:19:57.484Z
-Stopped at: Completed 01-11-PLAN.md
+Last session: 2026-10-29T22:51:17.637Z
+Stopped at: Completed 01-12-PLAN.md
 Resume file: None
