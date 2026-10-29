@@ -485,3 +485,294 @@ TEST_F(ProfileStateRestoreSetpoints, Characterize_SetpointsSavedAndRestored) {
     EXPECT_FLOAT_EQ(hp().target_temperature_low, 10.0f);
     EXPECT_FLOAT_EQ(hp().target_temperature_high, 12.0f);
 }
+
+// ════════════════════════════════════════════════════════════════
+// Lossnay profile (device type 0x34)
+// ════════════════════════════════════════════════════════════════
+// Frame rule for this suite (D-23 confines the synthetic frames of PR 1a to plan 01-08): only real_frames.h
+// constants are fed; expected written frames are the checksums of tests/unit/test_lossnay.cpp or the
+// component's own encoder layout; no frame is invented. The repo holds no Lossnay handshake reply (0x7A with
+// profile byte 0x34): see "Wanted captures" in the plan summary.
+
+class ProfileStateLossnay : public cn105_test::Cn105Fixture {
+   protected:
+    cn105_test::Cn105Options options() const override {
+        cn105_test::Cn105Options o;
+        o.lossnay = true;
+        return o;
+    }
+
+    /// climate.py validate_lossnay_config: AUTO, HEAT, FAN_ONLY, OFF and fans LOW, MEDIUM, MIDDLE, HIGH only,
+    /// no swing.
+    void before_setup(esphome::CN105Climate& hp) override {
+        auto& traits = hp.config_traits();
+        traits.set_supported_modes({CLIMATE_MODE_OFF, CLIMATE_MODE_AUTO, CLIMATE_MODE_HEAT, CLIMATE_MODE_FAN_ONLY});
+        traits.set_supported_fan_modes({CLIMATE_FAN_LOW, CLIMATE_FAN_MEDIUM, CLIMATE_FAN_MIDDLE, CLIMATE_FAN_HIGH});
+        traits.set_supported_swing_modes({});
+    }
+
+    /// Waits for the CONNECT frame the component writes (returns it).
+    std::vector<uint8_t> wait_for_connect_frame() {
+        std::vector<uint8_t> written;
+        for (uint32_t waited = 0; written.empty() && waited < 30000; waited += 10) {
+            step(10);
+            written = take_tx();
+        }
+        return written;
+    }
+
+    /// no Lossnay handshake capture yet - connected state set through the production transition, no frame
+    /// invented (D-23); see Wanted captures. handleConnectionSuccess() is what a 0x7A reply with profile 0x34
+    /// triggers in processCommand(). Calling it alone is not enough: the received bytes of any reply also
+    /// stamp lastResponseMs (hp_readings.cpp processInput), without which isHeatpumpConnectionActive() is
+    /// false and the first poll request is refused ("could not write as asked, because UART is not
+    /// connected"). The stamp comes from the real heat-pump reply, which the profile rejects (pinned below).
+    void connect_without_handshake_capture() {
+        const auto connect_frame = wait_for_connect_frame();
+        ASSERT_FALSE(connect_frame.empty());
+        feed(cn105_test::real_frames::CONNECT_REPLY);
+        step(10);
+        ASSERT_FALSE(hp().isHeatpumpConnected()) << "rejected: profile byte 0x30";
+        hp().handleConnectionSuccess();
+        ASSERT_TRUE(hp().isHeatpumpConnected());
+    }
+
+    /// Steps by 10 ms until a 0x41 frame is written (max `max_ms`); other frames are dropped.
+    std::vector<uint8_t> step_until_set_frame(uint32_t max_ms = 5000) {
+        for (uint32_t waited = 0; waited < max_ms; waited += 10) {
+            step(10);
+            for (auto& f : take_tx_frames()) {
+                if (f.size() > 1 && f[1] == 0x41) return f;
+            }
+        }
+        return {};
+    }
+};
+
+// The CONNECT frame is the component's own encoder output with the Lossnay profile byte.
+TEST_F(ProfileStateLossnay, Characterize_LossnayConnectFrame) {
+    EXPECT_EQ(str(hp().profile_->name()), "Lossnay");
+    EXPECT_EQ(hp().profile_->id(), 0x34);
+    const auto written = wait_for_connect_frame();
+    // test_lossnay.cpp LossnayFrames.ConnectProfileAndChecksum: FC 5A 01 34 02 CA 01, checksum 0xA4
+    const std::vector<uint8_t> expected = {0xFC, 0x5A, 0x01, 0x34, 0x02, 0xCA, 0x01, 0xA4};
+    EXPECT_EQ(written, expected) << hex(written);
+}
+
+// The real heat-pump reply (profile byte 0x30) is not a Lossnay handshake: rejected, still not connected.
+TEST_F(ProfileStateLossnay, Characterize_LossnayIgnoresHeatPumpHandshakeReply) {
+    ASSERT_FALSE(wait_for_connect_frame().empty());
+    cn105_test::TestLog::clear();
+    feed(cn105_test::real_frames::CONNECT_REPLY);
+    step(10);
+    EXPECT_TRUE(cn105_test::TestLog::contains("Ignoring unexpected handshake response for Lossnay"));
+    EXPECT_FALSE(hp().isHeatpumpConnected());
+    EXPECT_FALSE(hp().currentSettings.connected);
+}
+
+TEST_F(ProfileStateLossnay, Characterize_LossnayAllowOperationRefusesAndWarns) {
+    using esphome::cn105::ProfileFeature;
+    auto& profile = *hp().profile_;
+
+    // TEMPERATURE: refused with a dedicated warning, logged ONCE (target_warning_logged_)
+    cn105_test::TestLog::clear();
+    EXPECT_FALSE(profile.allow_operation(ProfileFeature::TEMPERATURE));
+    EXPECT_TRUE(cn105_test::TestLog::contains("Ignoring Lossnay target-temperature changes: no confirmed setpoint field"));
+    cn105_test::TestLog::clear();
+    EXPECT_FALSE(profile.allow_operation(ProfileFeature::TEMPERATURE));
+    EXPECT_FALSE(cn105_test::TestLog::contains("Ignoring Lossnay target-temperature")) << "second call: silent";
+
+    // every other feature: refused with "Ignoring unsupported Lossnay operation (<enum value>)", every time
+    const struct {
+        ProfileFeature feature;
+        const char* expected_log;
+    } cases[] = {
+        {ProfileFeature::SWING, "Ignoring unsupported Lossnay operation (1)"},
+        {ProfileFeature::REMOTE_TEMPERATURE, "Ignoring unsupported Lossnay operation (2)"},
+        {ProfileFeature::AUXILIARY_CONTROLS, "Ignoring unsupported Lossnay operation (3)"},
+        {ProfileFeature::INSTALLER_MODE, "Ignoring unsupported Lossnay operation (4)"},
+    };
+    for (const auto& c : cases) {
+        for (int call = 0; call < 2; call++) {
+            cn105_test::TestLog::clear();
+            EXPECT_FALSE(profile.allow_operation(c.feature)) << c.expected_log;
+            EXPECT_EQ(cn105_test::TestLog::count(c.expected_log), 1u) << c.expected_log << " (call " << call << ")";
+        }
+        EXPECT_FALSE(profile.supports(c.feature)) << c.expected_log;
+    }
+}
+
+TEST_F(ProfileStateLossnay, Characterize_LossnayMappingRefusesUnsupportedSettings) {
+    auto& profile = *hp().profile_;
+    EXPECT_EQ(str(profile.mode_setting("HEAT")), "HEAT");
+    EXPECT_EQ(str(profile.mode_setting("FAN")), "FAN");
+    EXPECT_EQ(str(profile.mode_setting("AUTO")), "AUTO");
+    EXPECT_EQ(str(profile.fan_setting("1")), "1");
+    EXPECT_EQ(str(profile.fan_setting("4")), "4");
+
+    cn105_test::TestLog::clear();
+    EXPECT_EQ(profile.mode_setting("COOL"), nullptr);
+    EXPECT_TRUE(cn105_test::TestLog::contains("Ignoring unsupported Lossnay mode COOL"));
+    cn105_test::TestLog::clear();
+    EXPECT_EQ(profile.fan_setting("AUTO"), nullptr);
+    EXPECT_TRUE(cn105_test::TestLog::contains("Ignoring unsupported Lossnay fan mode AUTO"));
+    EXPECT_EQ(profile.fan_setting("QUIET"), nullptr);
+}
+
+TEST_F(ProfileStateLossnay, Characterize_LossnayIgnoresTemperatureChange) {
+    connect_without_handshake_capture();
+    ASSERT_FALSE(HasFatalFailure());
+    run_poll_cycle({{0x02, cn105_test::real_frames::LOSSNAY_HEAT_RECOVERY}});
+    publishes_.clear();
+    take_tx();
+    cn105_test::TestLog::clear();
+
+    hp().make_call().set_target_temperature(24.0f).perform();
+
+    // nothing wanted, nothing published, nothing sent
+    EXPECT_FLOAT_EQ(hp().wantedSettings.temperature, -1.0f);
+    EXPECT_FALSE(hp().wantedSettings.hasChanged);
+    EXPECT_TRUE(publishes_.empty());
+    EXPECT_TRUE(cn105_test::TestLog::contains("Ignoring Lossnay target-temperature changes: no confirmed setpoint field"));
+    EXPECT_TRUE(step_until_set_frame(2000).empty()) << "no temperature byte is ever written";
+}
+
+// The heat pump answers only the 0x02 request (the repo holds no Lossnay capture for 0x03/0x06/0x04): the
+// unanswered 0x03 request ends the cycle by timeout after 3 s and the later requests are not sent.
+TEST_F(ProfileStateLossnay, Characterize_LossnayDecodesCapturedSettings) {
+    connect_without_handshake_capture();
+    ASSERT_FALSE(HasFatalFailure());
+
+    const struct {
+        const char* label;
+        const std::vector<uint8_t>* frame;
+        const char* power;
+        const char* mode;
+        ClimateMode climate_mode;
+        ClimateAction action;
+    } cases[] = {
+        // power=data[3], mode=data[5] (0 HEAT recovery, 1 bypass, 2 automatic), fan=data[6] (4 = HIGH)
+        {"heat_recovery", &cn105_test::real_frames::LOSSNAY_HEAT_RECOVERY, "ON", "HEAT", CLIMATE_MODE_HEAT, CLIMATE_ACTION_HEATING},
+        {"bypass", &cn105_test::real_frames::LOSSNAY_BYPASS, "ON", "FAN", CLIMATE_MODE_FAN_ONLY, CLIMATE_ACTION_FAN},
+        {"automatic", &cn105_test::real_frames::LOSSNAY_AUTOMATIC, "ON", "AUTO", CLIMATE_MODE_AUTO, CLIMATE_ACTION_IDLE},
+        {"off", &cn105_test::real_frames::LOSSNAY_OFF, "OFF", "FAN", CLIMATE_MODE_OFF, CLIMATE_ACTION_OFF},
+    };
+    for (const auto& c : cases) {
+        SCOPED_TRACE(c.label);
+        publishes_.clear();
+        const uint32_t t0 = cn105_test::TestClock::now();
+        const auto requested = run_poll_cycle({{0x02, *c.frame}});
+        EXPECT_EQ(requested, (std::vector<uint8_t>{0x02, 0x03}));
+        EXPECT_FALSE(hp().loopCycle.isCycleRunning());
+        EXPECT_GE(cn105_test::TestClock::now() - t0, 3000u) << "ended by the cycle timeout";
+
+        EXPECT_EQ(str(hp().currentSettings.power), c.power);
+        EXPECT_EQ(str(hp().currentSettings.mode), c.mode);
+        EXPECT_EQ(str(hp().currentSettings.fan), "4");
+        EXPECT_TRUE(hp().currentSettings.connected);
+        EXPECT_FALSE(hp().currentSettings.iSee);
+        EXPECT_EQ(hp().mode, c.climate_mode);
+        ASSERT_FALSE(publishes_.empty());
+        EXPECT_EQ(publishes_.back().mode, c.climate_mode);
+        EXPECT_EQ(publishes_.back().action, c.action);
+        ASSERT_TRUE(publishes_.back().fan_mode.has_value());
+        EXPECT_EQ(*publishes_.back().fan_mode, CLIMATE_FAN_HIGH);
+    }
+}
+
+// 0x09 carries the mode the unit actually runs in automatic operation. The real Lossnay 0x09 captures are
+// fed as the answer to the 0x03 request: the scheduler dispatches a response by its own code
+// (process_response), whatever request is in flight.
+TEST_F(ProfileStateLossnay, Characterize_LossnayActualModeFromStatus) {
+    connect_without_handshake_capture();
+    ASSERT_FALSE(HasFatalFailure());
+
+    // --- automatic operation, actual mode not known yet: IDLE -------------------------------------------------------
+    run_poll_cycle({{0x02, cn105_test::real_frames::LOSSNAY_AUTOMATIC}});
+    ASSERT_EQ(hp().mode, CLIMATE_MODE_AUTO);
+    ASSERT_EQ(hp().action, CLIMATE_ACTION_IDLE);
+
+    // --- actual mode 0x00 (heat recovery): HEATING, published --------------------------------------------------------
+    publishes_.clear();
+    auto requested = run_poll_cycle({{0x02, cn105_test::real_frames::LOSSNAY_AUTOMATIC},
+                                     {0x03, cn105_test::real_frames::LOSSNAY_ACTUAL_HEAT_RECOVERY}});
+    EXPECT_EQ(requested, (std::vector<uint8_t>{0x02, 0x03, 0x04})) << "the 0x09 answer moves the cycle on to 0x04";
+    EXPECT_EQ(hp().action, CLIMATE_ACTION_HEATING);
+    ASSERT_FALSE(publishes_.empty());
+    EXPECT_EQ(publishes_.back().action, CLIMATE_ACTION_HEATING);
+
+    // --- actual mode 0x01 (bypass): FAN ------------------------------------------------------------------------------
+    publishes_.clear();
+    run_poll_cycle({{0x02, cn105_test::real_frames::LOSSNAY_AUTOMATIC},
+                    {0x03, cn105_test::real_frames::LOSSNAY_ACTUAL_BYPASS}});
+    EXPECT_EQ(hp().action, CLIMATE_ACTION_FAN);
+    ASSERT_FALSE(publishes_.empty());
+    EXPECT_EQ(publishes_.back().action, CLIMATE_ACTION_FAN);
+
+    // --- outside automatic operation the actual mode does not change the action ----------------------------------------
+    run_poll_cycle({{0x02, cn105_test::real_frames::LOSSNAY_HEAT_RECOVERY}});
+    ASSERT_EQ(hp().action, CLIMATE_ACTION_HEATING);
+    publishes_.clear();
+    run_poll_cycle({{0x02, cn105_test::real_frames::LOSSNAY_HEAT_RECOVERY},
+                    {0x03, cn105_test::real_frames::LOSSNAY_ACTUAL_BYPASS}});
+    EXPECT_EQ(hp().action, CLIMATE_ACTION_HEATING);
+    EXPECT_TRUE(publishes_.empty());
+}
+
+// Control frames: FC 41 01 34 10 01 + zeroed data, power flag 0x01 / byte 8, mode flag 0x04 / byte 10, fan flag
+// 0x08 / byte 11 (encode_lossnay_control). Checksums marked "capture" are those of tests/unit/test_lossnay.cpp
+// LossnayFrames.CapturedWriteChecksums (that test builds its frames with the same encoder); the others are the
+// component's own encoder output, no capture exists for them.
+TEST_F(ProfileStateLossnay, Characterize_LossnayControlFrameMatchesCapture) {
+    connect_without_handshake_capture();
+    ASSERT_FALSE(HasFatalFailure());
+    const std::map<uint8_t, std::vector<uint8_t>> responses = {{0x02, cn105_test::real_frames::LOSSNAY_HEAT_RECOVERY}};
+    run_poll_cycle(responses);
+    take_tx();
+
+    const auto lossnay_set = [](std::initializer_list<std::pair<int, uint8_t>> bytes) {
+        std::vector<uint8_t> f(21, 0x00);
+        f[0] = 0xFC;
+        f[1] = 0x41;
+        f[2] = 0x01;
+        f[3] = 0x34;
+        f[4] = 0x10;
+        f[5] = 0x01;
+        for (const auto& b : bytes) f[static_cast<size_t>(b.first)] = b.second;
+        return cn105_test::with_checksum(f);
+    };
+
+    const struct {
+        const char* label;
+        std::function<void()> act;
+        std::vector<uint8_t> expected;
+        int capture_checksum;  // -1: no capture
+    } cases[] = {
+        {"OFF", [this] { hp().make_call().set_mode(CLIMATE_MODE_OFF).perform(); }, lossnay_set({{6, 0x01}, {8, 0x00}}), 0x78},
+        {"HEAT", [this] { hp().make_call().set_mode(CLIMATE_MODE_HEAT).perform(); },
+         lossnay_set({{6, 0x05}, {8, 0x01}, {10, 0x00}}), 0x73},
+        {"FAN_ONLY (bypass)", [this] { hp().make_call().set_mode(CLIMATE_MODE_FAN_ONLY).perform(); },
+         lossnay_set({{6, 0x05}, {8, 0x01}, {10, 0x01}}), -1},
+        {"AUTO", [this] { hp().make_call().set_mode(CLIMATE_MODE_AUTO).perform(); },
+         lossnay_set({{6, 0x05}, {8, 0x01}, {10, 0x02}}), -1},
+        {"fan HIGH", [this] { hp().make_call().set_fan_mode(CLIMATE_FAN_HIGH).perform(); },
+         lossnay_set({{6, 0x08}, {11, 0x04}}), 0x6D},
+        {"fan LOW", [this] { hp().make_call().set_fan_mode(CLIMATE_FAN_LOW).perform(); },
+         lossnay_set({{6, 0x08}, {11, 0x01}}), -1},
+        {"fan MEDIUM", [this] { hp().make_call().set_fan_mode(CLIMATE_FAN_MEDIUM).perform(); },
+         lossnay_set({{6, 0x08}, {11, 0x02}}), -1},
+        {"fan MIDDLE", [this] { hp().make_call().set_fan_mode(CLIMATE_FAN_MIDDLE).perform(); },
+         lossnay_set({{6, 0x08}, {11, 0x03}}), -1},
+    };
+    for (const auto& c : cases) {
+        SCOPED_TRACE(c.label);
+        c.act();
+        const auto frame = step_until_set_frame();
+        EXPECT_EQ(frame, c.expected) << hex(frame);
+        if (c.capture_checksum >= 0 && !frame.empty()) {
+            EXPECT_EQ(frame.back(), c.capture_checksum) << "checksum of the captured write (test_lossnay.cpp)";
+        }
+        run_poll_cycle(responses);  // the unit confirms its state again: next command starts from the same state
+        take_tx();
+    }
+}
