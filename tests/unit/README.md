@@ -133,6 +133,27 @@ Extra wishes recorded by earlier plans:
 | 11 | A heat-pump `0x02` reply in AUTO mode (mode byte `0x08`) and one with a HEAT_COOL-compatible state | Put the unit in AUTO, capture the `0x02` poll; repeat with a HEAT_COOL band set from HA | Real-frame reconciliation of a HEAT_COOL band after a poll (`restore_setpoints()`, plan 01-10) |
 | 12 | A `0x04` error-info reply carrying a real error code (code and sub-code non-zero) | While the unit reports a fault (or from its error history), capture the reply to the `FC 42 ... 04` info request; only the `0x80` "No Error" reply exists today | Decode of a non-zero `Error 0x.. sub 0x..` through `ReadingsDecodeSensors` (plan 01-13) |
 
+## Determinism of the test platform
+
+Every characterization test must give the same result alone, under `ctest` (one process per test), in a
+full run and in any order. `reset_platform()` (called by the fixtures' `SetUp`) resets everything a test can
+observe: clock, log capture, preferences, Wi-Fi, the recorded IDF calls and the random value.
+
+- `esphome::random_uint32()` is a constant in both variants (`TestRandom`, default 4), not a sequence. ESPHome
+  draws from it for the start offset of every `set_interval()` (a random 0 to 5 s delay before the first
+  tick), so the default is an offset of 0 ms. A test that needs another offset pins it with
+  `TestRandom::set(value)` (offset = `(value * min(interval / 2, 5000)) >> 32`); the next `SetUp` resets it.
+- Why a constant and not a reseeded sequence: the upstream ESP32 `random_uint32()` is a splitmix32 over a
+  file-static state that no test can reset and that advances on every call, so the offset of a keep-alive
+  depended on how many draws the tests before it had made in the process (`RemoteTemperatureEntities.Characterize_SameValueDebounced` passed in a
+  full run and failed alone or under ctest). The ESP32 variant therefore compiles `core/helpers.cpp` through a
+  generated wrapper that renames the upstream function (the fetched file is included, not patched), and
+  `stubs_esp32.cpp` defines the real one on `TestRandom`. ESPHome has no such definition on ESP8266, where
+  `stubs_esp8266.cpp` always did. A constant also cannot shift when production code adds or removes a
+  `set_interval()` and moves every later draw.
+- To check a change for order dependence: `ctest -j8 --schedule-random`, and the binaries with
+  `--gtest_shuffle --gtest_random_seed=N` for a few seeds.
+
 ## How headers are counted
 
 A header with inline code only produces object code where something includes it. To keep header code
@@ -156,6 +177,8 @@ The harness uses the ESPHome release that the CI `stable` image uses today.
 2. Update the version overlay `tests/unit/harness/overlay/esphome/core/version.h`.
 3. Confirm that the CI `esphome-build` image (`ghcr.io/esphome/esphome:stable`) is the same version.
 4. Rebuild with `tests/unit/coverage.sh --docker`. Expect small shim edits under `harness/shim_*` and
-   `harness/platform`.
+   `harness/platform`. If `core/helpers.cpp` stops defining `random_uint32()` out of line (or the ESP8266
+   one starts to), the generated `helpers_esp32.cpp` wrapper in `harness/CMakeLists.txt` and the stubs'
+   `random_uint32()` fail to compile or link: adapt them, do not let the upstream generator back in.
 5. Record the new toolchain in `tests/unit/coverage-baseline.json` (the ratchet job warns when the
    toolchain differs from the recorded one).

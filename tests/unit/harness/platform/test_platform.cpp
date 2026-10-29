@@ -1,8 +1,10 @@
 /// test_platform.cpp — variant-independent half of the host test platform
-/// Role: owns the one 64-bit test clock behind cn105_test::TestClock, captures ESPHome log lines,
-///       keeps preferences in memory and provides the Wi-Fi component stub. It defines NO platform
-///       time symbol (no esphome::millis / delay, no ::millis / micros): those live in
-///       stubs_<variant>.cpp and read this clock, so each time symbol has exactly one definition (D-05).
+/// Role: owns the one 64-bit test clock behind cn105_test::TestClock, the value behind
+///       cn105_test::TestRandom, captures ESPHome log lines, keeps preferences in memory and provides
+///       the Wi-Fi component stub. It defines NO platform time symbol (no esphome::millis / delay,
+///       no ::millis / micros): those live in stubs_<variant>.cpp and read this clock, so each time
+///       symbol has exactly one definition (D-05). Likewise esphome::random_uint32() is defined in
+///       stubs_<variant>.cpp and reads TestRandom.
 /// Deps: test_platform.h, ESPHome 2026.10.0 core headers (overlay + fetched tree)
 
 #include "test_platform.h"
@@ -88,6 +90,15 @@ void TestWifi::remove() {
     esphome::wifi::global_wifi_component = nullptr;
 }
 
+// ════ Random ══════════════════════════════════════════════════════════════════════════════════
+namespace {
+uint32_t g_random_value = TestRandom::kDefault;
+}
+
+void TestRandom::reset() { g_random_value = kDefault; }
+void TestRandom::set(uint32_t value) { g_random_value = value; }
+uint32_t TestRandom::next() { return g_random_value; }
+
 #ifdef USE_ESP32
 // ════ Recorded IDF calls ══════════════════════════════════════════════════════════════════════
 namespace {
@@ -110,6 +121,7 @@ void reset_platform(uint64_t start_ms) {
     TestLog::clear();
     TestPrefs::clear();
     TestWifi::remove();
+    TestRandom::reset();
 #ifdef USE_ESP32
     IdfRecorder::clear();
 #endif

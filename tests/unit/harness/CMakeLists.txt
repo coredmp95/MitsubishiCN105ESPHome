@@ -110,6 +110,26 @@ function(cn105_harness_variant VARIANT)
     foreach(src ${CN105_ESPHOME_COMMON_SOURCES} ${WAKE_SOURCE})
         list(APPEND SOURCES "${esphome_SOURCE_DIR}/esphome/${src}")
     endforeach()
+
+    if(VARIANT STREQUAL "esp32")
+        # ESPHome's random_uint32() (core/helpers.cpp, every platform but ESP8266) is a splitmix32 over a
+        # file-static state, seeded once per process and advanced by every call, which the scheduler calls
+        # for the start offset of each set_interval(). A test would then get an offset that depends on how
+        # many draws the tests before it made in the same process (alone, under ctest and in a full run
+        # gave different offsets, and Characterize_SameValueDebounced failed alone). So the upstream
+        # definition is compiled under another name, and stubs_esp32.cpp defines the real
+        # esphome::random_uint32() on cn105_test::TestRandom, as stubs_esp8266.cpp does (ESP8266 upstream
+        # has no definition in helpers.cpp). The fetched file is included, not patched; random_float(),
+        # which nothing in the harness calls, still reaches the renamed upstream function.
+        set(HELPERS_TU "${CMAKE_CURRENT_BINARY_DIR}/helpers_${VARIANT}.cpp")
+        file(GENERATE OUTPUT "${HELPERS_TU}" CONTENT
+"// generated: ESPHome core/helpers.cpp with random_uint32() renamed, the test platform defines the real one
+#define random_uint32 cn105_upstream_random_uint32
+#include \"${esphome_SOURCE_DIR}/esphome/core/helpers.cpp\"
+")
+        list(REMOVE_ITEM SOURCES "${esphome_SOURCE_DIR}/esphome/core/helpers.cpp")
+        list(APPEND SOURCES "${HELPERS_TU}")
+    endif()
     add_library(esphome_${VARIANT} STATIC ${SOURCES})
     target_link_libraries(esphome_${VARIANT} PUBLIC harness_flags_${VARIANT})
 

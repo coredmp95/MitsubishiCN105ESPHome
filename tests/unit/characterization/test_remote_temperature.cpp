@@ -130,7 +130,7 @@ TEST_F(RemoteTemperatureEntities, Characterize_KeepAliveResendsAfterInterval) {
     // The value is sent once when it arrives, then re-sent by the keep-alive without any new
     // set_remote_temperature(): the keep-alive only raises shouldSendExternalTemperature_, the packet leaves
     // at the end of the next poll cycle. ESPHome staggers a new interval by a random offset in [0, 5 s) before
-    // its first tick (the test platform makes it deterministic but it differs per variant), so only the
+    // its first tick (TestRandom: 0 ms unless a test pins another value, in both variants), so only the
     // spacing is pinned, not the absolute time. A first tick within 10 s of the initial send is swallowed by
     // the debounce (min interval = max(keep-alive / 2, 5 s) = 10 s); later ticks are 20 s apart.
     ASSERT_EQ(frames.size(), 3u);
@@ -144,11 +144,18 @@ TEST_F(RemoteTemperatureEntities, Characterize_KeepAliveResendsAfterInterval) {
 }
 
 TEST_F(RemoteTemperatureEntities, Characterize_SameValueDebounced) {
+    // The keep-alive interval starts with the first accepted value and ESPHome delays its first tick by a
+    // random offset. 0 ms (the TestRandom default, pinned here because the counts below depend on it): the
+    // first tick fires at once, while the flag raised by set_remote_temperature() is still pending, and the
+    // next one is 20 s later, outside this test. Characterize_KeepAliveTickInsideDebounceWindowIsCounted
+    // covers a tick that lands inside the window.
+    cn105_test::TestRandom::set(0);
     connected_and_idle();
     ASSERT_FALSE(HasFatalFailure());
 
     hp().set_remote_temperature(22.8f);
     ASSERT_EQ(remote_frames_over(3000).size(), 1u);
+    EXPECT_EQ(hp().remote_temp_debounce_skip_count_, 0);
 
     // Same value again 3 s later: still inside the debounce window (max(keep-alive / 2, 5 s) = 10 s).
     // The watchdog is refreshed, the packet is not rewritten.
@@ -166,6 +173,29 @@ TEST_F(RemoteTemperatureEntities, Characterize_SameValueDebounced) {
     ASSERT_EQ(changed.size(), 1u);
     EXPECT_EQ(hp().remote_temp_debounce_skip_count_, 0);
     EXPECT_EQ(hp().last_remote_temp_sent_, 23.1f);
+}
+
+TEST_F(RemoteTemperatureEntities, Characterize_KeepAliveTickInsideDebounceWindowIsCounted) {
+    // First keep-alive tick at (0x52000000 * 5000) >> 32 = 1601 ms after the value arrived. The packet leaves
+    // at the end of the first poll cycle (about 1.1 s after the value), so the tick comes after it: this is
+    // the case that made Characterize_SameValueDebounced order-dependent while the offset came from a
+    // process-wide sequence.
+    cn105_test::TestRandom::set(0x52000000);
+    connected_and_idle();
+    ASSERT_FALSE(HasFatalFailure());
+
+    cn105_test::TestLog::clear();
+    hp().set_remote_temperature(22.8f);
+    EXPECT_EQ(remote_frames_over(3000).size(), 1u) << "the value is sent once";
+
+    // The tick re-raised shouldSendExternalTemperature_ with the same value, so the end of the next poll cycle
+    // tried to send it again 1060 ms after the previous packet: swallowed by the debounce (10 s) and counted
+    // like a repeated set_remote_temperature() call (3 such skips log the heartbeat warning).
+    EXPECT_TRUE(cn105_test::TestLog::contains("Keep-alive: re-sending remote temperature"));
+    EXPECT_TRUE(cn105_test::TestLog::contains("Debounce: skipping remote temp send (same value 22.8, 1060 ms"));
+    EXPECT_EQ(hp().remote_temp_debounce_skip_count_, 1);
+    EXPECT_FALSE(hp().shouldSendExternalTemperature_);
+    EXPECT_TRUE(hp().remote_temp_keepalive_active_);
 }
 
 // ════ Timeout fallback ════════════════════════════════════════
