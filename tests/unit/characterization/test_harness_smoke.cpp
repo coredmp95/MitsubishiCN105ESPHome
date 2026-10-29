@@ -5,10 +5,12 @@
 #include "fixture.h"
 
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <vector>
 
 #include "cn105_protocol.h"
+#include "real_frames.h"
 #include "esphome/components/wifi/wifi_component.h"
 #ifdef USE_ESP32
 #include "driver/gpio.h"
@@ -46,6 +48,100 @@ TEST_F(HarnessSmoke, ConnectFrameWrittenAfterGraceDelay) {
     // The expected bytes are the CONNECT constant of cn105_types.h, checksum included.
     EXPECT_EQ(expected, std::vector<uint8_t>(CONNECT, CONNECT + CONNECT_LEN));
     EXPECT_EQ(cn105_protocol::checksum(expected.data(), static_cast<int>(expected.size()) - 1), expected.back());
+}
+
+// ════════════════════════════════════════════════════════════════
+// HarnessSmoke — the full exchange: handshake, poll cycle, decode, command
+// ════════════════════════════════════════════════════════════════
+
+TEST_F(HarnessSmoke, HandshakeReplyConnects) {
+    connect();
+    ASSERT_FALSE(HasFatalFailure());
+    EXPECT_TRUE(hp().isHeatpumpConnected());
+    EXPECT_TRUE(cn105_test::TestLog::contains("CONNECTED"));
+}
+
+TEST_F(HarnessSmoke, FirstPollCycleRequestsInfoCodesInOrder) {
+    connect();
+    ASSERT_FALSE(HasFatalFailure());
+    take_tx();
+
+    const std::vector<uint8_t> requested = run_poll_cycle();
+    const std::vector<uint8_t> expected_codes = {0x02, 0x03, 0x06, 0x09, 0x04};
+    EXPECT_EQ(requested, expected_codes);
+}
+
+TEST_F(HarnessSmoke, PollCycleRequestFramesCarryTheirChecksums) {
+    connect();
+    ASSERT_FALSE(HasFatalFailure());
+    take_tx();
+
+    // Record the raw request frames of one cycle by answering with default_responses().
+    const auto responses = default_responses();
+    std::vector<std::vector<uint8_t>> requests;
+    bool started = false;
+    for (uint32_t elapsed = 0; elapsed < 5000; elapsed += 10) {
+        step(10);
+        for (const auto& frame : take_tx_frames()) {
+            if (frame.size() < 6 || frame[1] != 0x42) continue;
+            requests.push_back(frame);
+            auto it = responses.find(frame[5]);
+            if (it != responses.end()) feed(it->second);
+        }
+        if (hp().loopCycle.isCycleRunning()) started = true;
+        if (started && !hp().loopCycle.isCycleRunning()) break;
+    }
+    ASSERT_EQ(requests.size(), 5u);
+    const uint8_t expected_checksums[] = {0x7B, 0x7A, 0x77, 0x74, 0x79};
+    for (size_t i = 0; i < requests.size(); i++) {
+        EXPECT_EQ(requests[i].size(), 22u) << cn105_test::hex(requests[i]);
+        EXPECT_EQ(requests[i].back(), expected_checksums[i]) << cn105_test::hex(requests[i]);
+    }
+}
+
+TEST_F(HarnessSmoke, PollCyclePublishesDecodedState) {
+    connect();
+    ASSERT_FALSE(HasFatalFailure());
+    take_tx();
+    publishes_.clear();
+
+    run_poll_cycle();
+    ASSERT_FALSE(publishes_.empty());
+    const cn105_test::Published& last = publishes_.back();
+    EXPECT_EQ(last.mode, esphome::climate::CLIMATE_MODE_HEAT);
+    EXPECT_FLOAT_EQ(last.target_temperature, 21.5f);
+    EXPECT_FLOAT_EQ(last.current_temperature, 23.0f);
+    // Observed with the unmodified component: STATUS_IDLE gives IDLE, SETTINGS fan byte 0 gives AUTO,
+    // vane byte 0 leaves swing OFF. One publish per decoded response (settings, room temperature,
+    // status, power): four in this cycle; the first has no current temperature yet.
+    EXPECT_EQ(last.action, esphome::climate::CLIMATE_ACTION_IDLE);
+    ASSERT_TRUE(last.fan_mode.has_value());
+    EXPECT_EQ(*last.fan_mode, esphome::climate::CLIMATE_FAN_AUTO);
+    EXPECT_EQ(last.swing_mode, esphome::climate::CLIMATE_SWING_OFF);
+    EXPECT_EQ(publishes_.size(), 4u);
+    EXPECT_TRUE(std::isnan(publishes_.front().current_temperature));
+}
+
+TEST_F(HarnessSmoke, ClimateCallProducesSetFrame) {
+    connect();
+    ASSERT_FALSE(HasFatalFailure());
+    run_poll_cycle();
+    take_tx();
+    publishes_.clear();
+
+    hp().make_call().set_mode(esphome::climate::CLIMATE_MODE_HEAT).set_target_temperature(23.0f).perform();
+    run_for(2000);
+
+    const auto frames = take_tx_frames();
+    std::vector<std::vector<uint8_t>> set_frames;
+    for (const auto& f : frames) {
+        if (f.size() > 1 && f[1] == 0x41) set_frames.push_back(f);
+    }
+    ASSERT_EQ(set_frames.size(), 1u);
+    const std::vector<uint8_t> expected = {0xFC, 0x41, 0x01, 0x30, 0x10, 0x01, 0x07, 0x00, 0x01, 0x01, 0x00,
+                                           0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xAE, 0x00, 0xC6};
+    EXPECT_EQ(set_frames[0], expected) << cn105_test::hex(set_frames[0]);
+    EXPECT_EQ(publishes_.size(), 2u);
 }
 
 // ════════════════════════════════════════════════════════════════
