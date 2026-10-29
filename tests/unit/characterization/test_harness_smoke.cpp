@@ -7,12 +7,15 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <mutex>
+#include <type_traits>
 #include <vector>
 
 #include "cn105_protocol.h"
 #include "real_frames.h"
 #include "esphome/components/wifi/wifi_component.h"
 #ifdef USE_ESP32
+// The variants differ here on purpose: only the ESP32 build has the ESP-IDF layer (gpio / uart).
 #include "driver/gpio.h"
 #include "driver/uart.h"
 #endif
@@ -25,6 +28,17 @@
 static_assert(sizeof(unsigned long) == 4, "the harness must be built with -m32");
 // Fails if the pure-test stub version.h (ESPHOME_VERSION_CODE 2026.3.0) leaks onto the include path.
 static_assert(ESPHOME_VERSION_CODE == VERSION_CODE(2026, 10, 0), "the real ESPHome 2026.10.0 headers must be used");
+
+// Pins which side of cn105's platform branches each variant compiles (Phase 7 removes the mutex and needs
+// both sides characterized): std::mutex on ESP32, the volatile-bool emulation on every other build.
+#ifdef USE_ESP32
+static_assert(std::is_same_v<decltype(esphome::CN105Climate::wantedSettingsMutex), std::mutex>,
+              "ESP32 variant must compile the std::mutex branch of cn105.h");
+#else
+// The variants differ here on purpose: the ESP8266 variant must compile the emulateMutex branch.
+static_assert(std::is_same_v<decltype(esphome::CN105Climate::wantedSettingsMutex), volatile bool>,
+              "ESP8266 variant must compile the volatile bool (emulateMutex) branch of cn105.h");
+#endif
 
 // ════════════════════════════════════════════════════════════════
 // HarnessSmoke — the tracer: handshake on the test clock
@@ -291,6 +305,7 @@ TEST_F(HarnessIsolation, Pollute) {
     pref.save(&in);
     cn105_test::TestWifi::install(true);
 #ifdef USE_ESP32
+    // The variants differ here on purpose: the ESP8266 build has no IDF layer, so there is nothing to record.
     gpio_reset_pin(3);
 #endif
 }
@@ -301,6 +316,7 @@ TEST_F(HarnessIsolation, StateIsResetInSetUp) {
     EXPECT_EQ(cn105_test::TestPrefs::size(), 0u);
     EXPECT_EQ(esphome::wifi::global_wifi_component, nullptr);
 #ifdef USE_ESP32
+    // The variants differ here on purpose: IdfRecorder exists only in the ESP32 variant (no IDF layer on ESP8266).
     EXPECT_TRUE(cn105_test::IdfRecorder::calls().empty());
 #endif
 }
