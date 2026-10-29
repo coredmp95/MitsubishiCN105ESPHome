@@ -4,9 +4,16 @@
 
 #include "fixture.h"
 
+#include <chrono>
+#include <cstdint>
 #include <vector>
 
 #include "cn105_protocol.h"
+#include "esphome/components/wifi/wifi_component.h"
+#ifdef USE_ESP32
+#include "driver/gpio.h"
+#include "driver/uart.h"
+#endif
 
 // ════════════════════════════════════════════════════════════════
 // Build flavour
@@ -39,4 +46,165 @@ TEST_F(HarnessSmoke, ConnectFrameWrittenAfterGraceDelay) {
     // The expected bytes are the CONNECT constant of cn105_types.h, checksum included.
     EXPECT_EQ(expected, std::vector<uint8_t>(CONNECT, CONNECT + CONNECT_LEN));
     EXPECT_EQ(cn105_protocol::checksum(expected.data(), static_cast<int>(expected.size()) - 1), expected.back());
+}
+
+// ════════════════════════════════════════════════════════════════
+// HarnessClock — time only moves when a test moves it (D-05)
+// ════════════════════════════════════════════════════════════════
+
+class HarnessClock : public cn105_test::ClockFixture {};
+
+TEST_F(HarnessClock, MillisWrapsAt32Bits) {
+    cn105_test::TestClock::set(0xFFFFFFF0ull);
+    cn105_test::TestClock::advance(0x20);
+    EXPECT_EQ(esphome::millis(), 0x10u);
+    EXPECT_EQ(cn105_test::TestClock::now64(), 0x100000010ull);
+    EXPECT_EQ(cn105_test::TestClock::now(), 0x10u);
+}
+
+TEST_F(HarnessClock, DelayAdvancesWithoutSleeping) {
+    const uint64_t before = cn105_test::TestClock::now64();
+    const auto wall_start = std::chrono::steady_clock::now();
+    esphome::delay(5000);
+    const auto wall_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - wall_start).count();
+    EXPECT_EQ(cn105_test::TestClock::now64() - before, 5000u);
+    EXPECT_LT(wall_ms, 1000);
+}
+
+TEST_F(HarnessClock, Millis64ContinuesAcrossWrap) {
+    // ESPHome's 64-bit time (the scheduler's time base) follows the same TestClock across the 2^32
+    // wrap. Assert the delta, not the absolute value, so rollover state left by an earlier test in the
+    // same process cannot change the result.
+    cn105_test::TestClock::set(0xFFFFFFF0ull);
+    const uint64_t m0 = esphome::millis_64();
+    cn105_test::TestClock::advance(0x20);
+    const uint64_t m1 = esphome::millis_64();
+    EXPECT_EQ(m1 - m0, 0x20u);
+    EXPECT_EQ(static_cast<uint32_t>(m1), 0x10u);
+}
+
+// ════════════════════════════════════════════════════════════════
+// HarnessPlatform — logs, preferences, Wi-Fi and IDF calls are observable
+// ════════════════════════════════════════════════════════════════
+
+class HarnessPlatform : public cn105_test::ClockFixture {};
+
+TEST_F(HarnessPlatform, LogCaptureKeepsLevelTagAndMessage) {
+    ESP_LOGW("harness_tag", "answer=%d name=%s", 42, "alpha");
+    ESP_LOGW("harness_tag", "answer=%d name=%s", 43, "alpha");
+
+    const auto& records = cn105_test::TestLog::records();
+    ASSERT_EQ(records.size(), 2u);
+    EXPECT_EQ(records[0].level, ESPHOME_LOG_LEVEL_WARN);
+    EXPECT_EQ(records[0].tag, "harness_tag");
+    EXPECT_EQ(records[0].message, "answer=42 name=alpha");
+    EXPECT_TRUE(cn105_test::TestLog::contains("answer=43"));
+    EXPECT_FALSE(cn105_test::TestLog::contains("answer=44"));
+    EXPECT_EQ(cn105_test::TestLog::count("name=alpha"), 2u);
+    EXPECT_EQ(cn105_test::TestLog::count("answer=42"), 1u);
+
+    cn105_test::TestLog::clear();
+    EXPECT_TRUE(cn105_test::TestLog::records().empty());
+    EXPECT_FALSE(cn105_test::TestLog::contains("answer=42"));
+}
+
+TEST_F(HarnessPlatform, PrefsRoundTripInMemory) {
+    struct Blob {
+        uint32_t a;
+        uint8_t b;
+    };
+    EXPECT_EQ(cn105_test::TestPrefs::size(), 0u);
+
+    auto pref = esphome::global_preferences->make_preference<Blob>(0x1234u);
+    const Blob in{7u, 9u};
+    EXPECT_TRUE(pref.save(&in));
+    EXPECT_EQ(cn105_test::TestPrefs::size(), 1u);
+
+    Blob out{};
+    EXPECT_TRUE(pref.load(&out));
+    EXPECT_EQ(out.a, 7u);
+    EXPECT_EQ(out.b, 9u);
+
+    cn105_test::TestPrefs::clear();
+    EXPECT_EQ(cn105_test::TestPrefs::size(), 0u);
+    EXPECT_FALSE(pref.load(&out));
+}
+
+TEST_F(HarnessPlatform, WifiStubControlsGlobal) {
+    EXPECT_EQ(esphome::wifi::global_wifi_component, nullptr);
+
+    cn105_test::TestWifi::install(true);
+    ASSERT_NE(esphome::wifi::global_wifi_component, nullptr);
+    EXPECT_TRUE(esphome::wifi::global_wifi_component->is_connected());
+
+    cn105_test::TestWifi::set_connected(false);
+    EXPECT_FALSE(esphome::wifi::global_wifi_component->is_connected());
+
+    cn105_test::TestWifi::remove();
+    EXPECT_EQ(esphome::wifi::global_wifi_component, nullptr);
+}
+
+#ifdef USE_ESP32
+// ESP32 only: the ESP8266 build has no IDF layer.
+TEST_F(HarnessPlatform, IdfCallsRecorded) {
+    EXPECT_TRUE(cn105_test::IdfRecorder::calls().empty());
+
+    uart_set_pin(1, 4, 5, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+    gpio_reset_pin(7);
+
+    const auto& calls = cn105_test::IdfRecorder::calls();
+    ASSERT_EQ(calls.size(), 2u);
+    EXPECT_EQ(calls[0].fn, "uart_set_pin");
+    EXPECT_EQ(calls[0].a0, 1);
+    EXPECT_EQ(calls[0].a1, 4);
+    EXPECT_EQ(calls[0].a2, 5);
+    EXPECT_EQ(calls[0].a3, UART_PIN_NO_CHANGE);
+    EXPECT_EQ(calls[1].fn, "gpio_reset_pin");
+    EXPECT_EQ(calls[1].a0, 7);
+
+    cn105_test::IdfRecorder::clear();
+    EXPECT_TRUE(cn105_test::IdfRecorder::calls().empty());
+}
+#endif
+
+// ════════════════════════════════════════════════════════════════
+// HarnessIsolation — every test starts from reset platform state
+// ════════════════════════════════════════════════════════════════
+// Order-dependent by design: StateIsResetInSetUp must run right after Pollute in the same process.
+// gtest runs the tests of a suite in definition order; the binaries are run without --gtest_shuffle.
+
+class HarnessIsolation : public cn105_test::Cn105Fixture {
+   protected:
+    cn105_test::Cn105Options options() const override {
+        cn105_test::Cn105Options opts;
+        opts.start_ms = 5000;
+        return opts;
+    }
+};
+
+TEST_F(HarnessIsolation, Pollute) {
+    EXPECT_EQ(cn105_test::TestClock::now64(), 5000u);
+    cn105_test::TestClock::set(0x12345678ull);
+    ESP_LOGW("harness_tag", "POLLUTION-MARKER");
+    struct Blob {
+        uint32_t a;
+    };
+    auto pref = esphome::global_preferences->make_preference<Blob>(0x4321u);
+    const Blob in{1u};
+    pref.save(&in);
+    cn105_test::TestWifi::install(true);
+#ifdef USE_ESP32
+    gpio_reset_pin(3);
+#endif
+}
+
+TEST_F(HarnessIsolation, StateIsResetInSetUp) {
+    EXPECT_EQ(cn105_test::TestClock::now64(), 5000u);
+    EXPECT_FALSE(cn105_test::TestLog::contains("POLLUTION-MARKER"));
+    EXPECT_EQ(cn105_test::TestPrefs::size(), 0u);
+    EXPECT_EQ(esphome::wifi::global_wifi_component, nullptr);
+#ifdef USE_ESP32
+    EXPECT_TRUE(cn105_test::IdfRecorder::calls().empty());
+#endif
 }
