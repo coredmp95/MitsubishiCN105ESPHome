@@ -7,14 +7,23 @@ on:
   workflow_dispatch:
   pull_request:
 
+# Least privilege: every job reads the repository only. The coverage-gate job raises its own
+# permissions to post the sticky PR comment. Only the plain pull_request trigger is used, so a
+# pull request from a fork runs with a read-only token and no secret.
+permissions:
+  contents: read
+
 jobs:
   # ──────────────────────────────────────────────
-  # Job 1 — Unit tests (standalone C++ via GoogleTest)
+  # Job 1 — Unit tests (standalone C++ via GoogleTest) + coverage
   # GoogleTest is fetched automatically by CMake FetchContent.
+  # Pinned to ubuntu-24.04 (not ubuntu-latest): the coverage numbers depend on the GCC version
+  # (D-20). The 64-bit pure tests run first, then coverage.sh --ci rebuilds everything with -m32
+  # (pure + ESP32 + ESP8266 characterization) and writes the line + branch reports.
   # ──────────────────────────────────────────────
   unit-tests:
     name: Unit Tests (C++)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@v5
 
@@ -26,6 +35,33 @@ jobs:
 
     - name: Run tests
       run: cd tests/unit/build && ctest --output-on-failure --no-tests=error
+
+    - name: Install coverage toolchain
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends g++-multilib
+        python3 -m venv "$RUNNER_TEMP/covenv"
+        "$RUNNER_TEMP/covenv/bin/pip" install --require-virtualenv --only-binary=:all: \
+          -r tests/unit/requirements-coverage.lock.txt
+        echo "$RUNNER_TEMP/covenv/bin" >> "$GITHUB_PATH"
+
+    - name: Coverage (all test configurations)
+      run: tests/unit/coverage.sh --ci
+
+    - name: Coverage job summary
+      if: always()
+      run: |
+        if [ -f tests/unit/out/report.md ]; then
+          cat tests/unit/out/report.md >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    - name: Upload coverage report
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: coverage-report
+        path: tests/unit/out
+        retention-days: 14
 
   # ──────────────────────────────────────────────
   # Job 2 — ESPHome compile (existing matrix)
