@@ -462,3 +462,169 @@ TEST_F(ClimateControlsClockNear2Pow31, Characterize_BUG08_DebounceSignedNowPast2
     EXPECT_EQ(sent_at_ms_, t_command + 500) << "with the same timing as far from 2^31: lastChange + debounce_delay";
     EXPECT_EQ(hp().lastSend, static_cast<unsigned long>(sent_at_ms_));
 }
+
+// ════════════════════════════════════════════════════════════════
+// Platform locking paths of control()
+// ════════════════════════════════════════════════════════════════
+// Phase 7 (CLEAN-01 / audit DEBT-03) removes both mechanisms: the ESPHome loop is single-threaded, so the
+// std::mutex of ESP32 protects nothing and the ESP8266 emulateMutex only adds asynchronous retries. The
+// tests below document behaviour that will be removed deliberately; when CLEAN-01 lands they are replaced
+// by the one remaining behaviour: a command is applied synchronously.
+
+#if defined(USE_ESP32)
+
+TEST_F(ClimateControls, Characterize_Esp32ControlAppliesImmediatelyUnderLockGuard) {
+    connect_and_poll();
+    ASSERT_FALSE(HasFatalFailure());
+    cn105_test::TestLog::clear();
+
+    // control() holds std::lock_guard on wantedSettingsMutex for the whole call (the test must not hold
+    // it itself: std::mutex is not recursive and control() would deadlock).
+    hp().make_call().set_mode(CLIMATE_MODE_COOL).perform();
+
+    // Applied synchronously, inside perform(): no wait, no retry.
+    EXPECT_EQ(str(hp().wantedSettings.mode), "COOL");
+    EXPECT_EQ(str(hp().wantedSettings.power), "ON");
+    EXPECT_TRUE(hp().wantedSettings.hasChanged);
+    EXPECT_EQ(publishes_.size(), 1u);
+    // No scheduler item was created for the command, and nothing was deferred.
+    EXPECT_FALSE(hp().cancel_timeout("CONTROL_WANTED_SETTINGS")) << "no pending retry timeout";
+    EXPECT_FALSE(cn105_test::TestLog::contains("defferring"));
+    // The guard is released on return.
+    ASSERT_TRUE(hp().wantedSettingsMutex.try_lock());
+    hp().wantedSettingsMutex.unlock();
+}
+
+#else  // ESP8266 variant: emulateMutex
+
+namespace {
+/// Number of "already locked, defferring" log lines recorded so far (one per deferred attempt).
+size_t deferrals() { return cn105_test::TestLog::count("already locked, defferring"); }
+}  // namespace
+
+TEST_F(ClimateControls, Characterize_Esp8266EmulateMutexAppliesImmediatelyWhenFree) {
+    connect_and_poll();
+    ASSERT_FALSE(HasFatalFailure());
+    cn105_test::TestLog::clear();
+
+    hp().make_call().set_mode(CLIMATE_MODE_COOL).perform();
+
+    // Without contention the delegate runs synchronously, between "locking" and "unlocking".
+    EXPECT_EQ(str(hp().wantedSettings.mode), "COOL");
+    EXPECT_EQ(publishes_.size(), 1u);
+    EXPECT_FALSE(hp().wantedSettingsMutex) << "released after the delegate";
+    EXPECT_EQ(deferrals(), 0u);
+    EXPECT_FALSE(hp().cancel_timeout("CONTROL_WANTED_SETTINGS")) << "no pending retry timeout";
+}
+
+TEST_F(ClimateControls, Characterize_Esp8266EmulateMutexDefersWhileLocked) {
+    connect_and_poll();
+    ASSERT_FALSE(HasFatalFailure());
+    cn105_test::TestLog::clear();
+
+    // Someone holds the flag (the volatile bool that emulates the mutex).
+    hp().wantedSettingsMutex = true;
+    const uint32_t t_command = cn105_test::TestClock::now();
+    hp().make_call().set_mode(CLIMATE_MODE_COOL).perform();
+
+    // The command is NOT applied: no wanted state, no publish, one deferral logged.
+    EXPECT_EQ(str(hp().wantedSettings.mode), "<null>");
+    EXPECT_FALSE(hp().wantedSettings.hasChanged);
+    EXPECT_TRUE(publishes_.empty());
+    EXPECT_EQ(deferrals(), 1u);
+    EXPECT_TRUE(hp().wantedSettingsMutex) << "the foreign lock is untouched";
+
+    // The first retry is due 100 ms later; releasing the flag before it fires lets the command through.
+    step(50);
+    EXPECT_EQ(str(hp().wantedSettings.mode), "<null>");
+    hp().wantedSettingsMutex = false;
+    uint32_t applied_at = 0;
+    for (uint32_t waited = 0; waited < 200 && publishes_.empty(); waited++) {
+        step(1);
+        if (!publishes_.empty()) applied_at = cn105_test::TestClock::now();
+    }
+    ASSERT_EQ(publishes_.size(), 1u);
+    EXPECT_EQ(applied_at, t_command + 100) << "applied by the first retry, 100 ms after the call";
+    EXPECT_EQ(deferrals(), 1u) << "no second deferral: the flag was free at the retry";
+    EXPECT_EQ(str(hp().wantedSettings.mode), "COOL");
+    EXPECT_TRUE(hp().wantedSettings.hasChanged);
+    EXPECT_FALSE(hp().wantedSettingsMutex);
+    EXPECT_EQ(publishes_[0].mode, CLIMATE_MODE_COOL);
+}
+
+TEST_F(ClimateControls, Characterize_Esp8266EmulateMutexForcesUnlockAfter10Retries) {
+    connect_and_poll();
+    ASSERT_FALSE(HasFatalFailure());
+    cn105_test::TestLog::clear();
+
+    // The flag is never released. Each retry multiplies the delay by 1.2 (float, truncated), starting at 100 ms:
+    //   attempt n          0    1    2    3    4    5    6     7     8     9    10 (forced)
+    //   delay before it    -  100  120  144  172  206  247   296   355   426   511
+    hp().wantedSettingsMutex = true;
+    const uint32_t t_command = cn105_test::TestClock::now();
+    hp().make_call().set_mode(CLIMATE_MODE_COOL).perform();
+
+    std::vector<uint32_t> deferral_times = {cn105_test::TestClock::now() - t_command};  // attempt 0, inside perform()
+    ASSERT_EQ(deferrals(), 1u);
+    uint32_t forced_at = 0;
+    for (uint32_t waited = 0; waited < 4000 && forced_at == 0; waited++) {
+        step(1);
+        while (deferral_times.size() < deferrals()) deferral_times.push_back(cn105_test::TestClock::now() - t_command);
+        if (!publishes_.empty()) forced_at = cn105_test::TestClock::now() - t_command;
+    }
+
+    // 10 deferrals (attempts 0..9), cumulative delays 0, 100, 220, 364, 536, 742, 989, 1285, 1640, 2066 ms.
+    // Plain data, so the expected vector keeps the 100 -> x1.2 schedule readable.
+    const std::vector<uint32_t> expected_times = {0, 100, 220, 364, 536, 742, 989, 1285, 1640, 2066};
+    EXPECT_EQ(deferral_times, expected_times);
+    // The 11th attempt (retry_count 10, due 511 ms after the 10th) forces the command through.
+    EXPECT_EQ(forced_at, 2066u + 511u);
+    EXPECT_TRUE(cn105_test::TestLog::contains("10 retry calls failed because mutex was locked, forcing unlock"));
+    EXPECT_EQ(str(hp().wantedSettings.mode), "COOL");
+    EXPECT_TRUE(hp().wantedSettings.hasChanged);
+    ASSERT_EQ(publishes_.size(), 1u);
+    EXPECT_EQ(publishes_[0].mode, CLIMATE_MODE_COOL);
+    // The forced run clears the flag, although its (foreign) holder never released it.
+    EXPECT_FALSE(hp().wantedSettingsMutex);
+}
+
+#endif  // USE_ESP32
+
+// ════════════════════════════════════════════════════════════════
+// Setpoint persistence side effect of a command
+// ════════════════════════════════════════════════════════════════
+
+// supports.restore_setpoints: true
+class ClimateControlsRestoreSetpoints : public ClimateControls {
+   protected:
+    void before_setup(esphome::CN105Climate& hp) override { hp.set_restore_setpoints(true); }
+};
+
+TEST_F(ClimateControlsRestoreSetpoints, Characterize_SetpointSavedToPreferences) {
+    connect_and_poll();
+    ASSERT_FALSE(HasFatalFailure());
+    const size_t records_before = cn105_test::TestPrefs::size();
+    ASSERT_EQ(records_before, 0u) << "setup() only prepares the preference slot: nothing was saved yet";
+
+    hp().make_call().set_target_temperature(24.0f).perform();
+
+    // The setpoint record is written by controlDelegate() at control() time (save_setpoint_state_),
+    // before the command has been sent: if the send fails the flash already holds the requested state.
+    EXPECT_EQ(cn105_test::TestPrefs::size(), 1u);
+    EXPECT_TRUE(uart_.tx.empty()) << "nothing sent yet";
+
+    // Sending the frame does not write the record again.
+    const auto frame = step_until_set_frame();
+    ASSERT_FALSE(frame.empty());
+    EXPECT_EQ(cn105_test::TestPrefs::size(), 1u);
+}
+
+TEST_F(ClimateControls, Characterize_SetpointNotSavedWithoutRestoreOption) {
+    connect_and_poll();
+    ASSERT_FALSE(HasFatalFailure());
+
+    hp().make_call().set_target_temperature(24.0f).perform();
+    step_until_set_frame();
+
+    EXPECT_EQ(cn105_test::TestPrefs::size(), 0u) << "restore_setpoints is opt-in: no record without it";
+}
