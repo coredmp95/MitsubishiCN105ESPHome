@@ -42,10 +42,25 @@ std::vector<LogRecord>& log_store() {
 void TestLog::clear() { log_store().clear(); }
 const std::vector<LogRecord>& TestLog::records() { return log_store(); }
 
-// The query side below is completed (and covered by tests) in Task 3 of plan 01-01.
-bool TestLog::contains(const std::string&) { return false; }
-size_t TestLog::count(const std::string&) { return 0; }
-void TestLog::dump() {}
+bool TestLog::contains(const std::string& substr) { return count(substr) > 0; }
+
+size_t TestLog::count(const std::string& substr) {
+    size_t n = 0;
+    for (const LogRecord& record : log_store()) {
+        if (record.message.find(substr) != std::string::npos) n++;
+    }
+    return n;
+}
+
+void TestLog::dump() {
+    static const char* const kLevels[] = {"NONE", "ERROR", "WARN", "INFO", "CONFIG", "DEBUG", "VERBOSE", "VVERBOSE"};
+    fprintf(stderr, "---- TestLog: %zu record(s) ----\n", log_store().size());
+    for (const LogRecord& record : log_store()) {
+        const char* level = (record.level >= 0 && record.level <= 7) ? kLevels[record.level] : "?";
+        fprintf(stderr, "[%-8s][%s] %s\n", level, record.tag.c_str(), record.message.c_str());
+    }
+    fprintf(stderr, "---- end of TestLog ----\n");
+}
 
 // ════ Preferences ═════════════════════════════════════════════════════════════════════════════
 namespace {
@@ -56,21 +71,37 @@ std::map<uint32_t, std::vector<uint8_t>>& pref_store() {
 }  // namespace
 
 void TestPrefs::clear() { pref_store().clear(); }
-size_t TestPrefs::size() { return 0; }
+size_t TestPrefs::size() { return pref_store().size(); }
 
 // ════ Wi-Fi ═══════════════════════════════════════════════════════════════════════════════════
-void TestWifi::install(bool) {}
-void TestWifi::set_connected(bool) {}
-void TestWifi::remove() {}
+namespace {
+esphome::wifi::WiFiComponent g_wifi;  // the stub behind esphome::wifi::global_wifi_component
+}
+
+void TestWifi::install(bool connected) {
+    g_wifi.connected_ = connected;
+    esphome::wifi::global_wifi_component = &g_wifi;
+}
+void TestWifi::set_connected(bool connected) { g_wifi.connected_ = connected; }
+void TestWifi::remove() {
+    g_wifi.connected_ = false;
+    esphome::wifi::global_wifi_component = nullptr;
+}
 
 #ifdef USE_ESP32
-// ════ Recorded IDF calls: storage is completed in Task 3 of plan 01-01 ═══════════════════════
-void IdfRecorder::clear() {}
-const std::vector<IdfCall>& IdfRecorder::calls() {
-    static const std::vector<IdfCall> none;
-    return none;
+// ════ Recorded IDF calls ══════════════════════════════════════════════════════════════════════
+namespace {
+std::vector<IdfCall>& idf_store() {
+    static std::vector<IdfCall> calls;
+    return calls;
 }
-void IdfRecorder::record(const char*, int, int, int, int) {}
+}  // namespace
+
+void IdfRecorder::clear() { idf_store().clear(); }
+const std::vector<IdfCall>& IdfRecorder::calls() { return idf_store(); }
+void IdfRecorder::record(const char* fn, int a0, int a1, int a2, int a3) {
+    idf_store().push_back(IdfCall{fn, a0, a1, a2, a3});
+}
 #endif
 
 // ════ Reset ═══════════════════════════════════════════════════════════════════════════════════
