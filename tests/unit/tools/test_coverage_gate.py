@@ -594,5 +594,180 @@ class CompleteTest(ScopeCompleteTestCase):
         self.assertIn("components/cn105/b.h", text)
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Diff coverage (D-13) and sticky comment selection (D-07)
+# ═══════════════════════════════════════════════════════════════════════════
+
+MARKER = "<!-- cn105-coverage-report -->"
+
+
+def diff_report(total, violations, src_stats=None):
+    pct = 100.0 if total == 0 else 100.0 * (total - violations) / total
+    return {
+        "report_name": "coverage.xml",
+        "diff_name": "origin/main...HEAD, staged and unstaged changes",
+        "src_stats": src_stats if src_stats is not None else {},
+        "total_num_lines": total,
+        "total_num_violations": violations,
+        "total_percent_covered": int(pct),
+        "num_changed_lines": total,
+    }
+
+
+class DiffCoverageTest(TempDirTestCase):
+    def diff(self, report, *extra):
+        d = self.write_json("diff.json", report)
+        return self.run_cli("diff", "--report", d, "--threshold", "80", *extra)
+
+    def test_diff_exactly_80_percent_passes(self):
+        r = self.diff(diff_report(10, 2))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("PASS", r.stdout)
+
+    def test_diff_five_lines_one_violation_is_80_percent_and_passes(self):
+        r = self.diff(diff_report(5, 1))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_diff_70_percent_fails(self):
+        r = self.diff(diff_report(10, 3))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("FAIL", r.stdout)
+
+    def test_diff_77_78_percent_fails(self):
+        r = self.diff(diff_report(9, 2))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("77.78%", r.stdout)
+
+    def test_diff_exempt_turns_failure_into_pass_but_keeps_the_number(self):
+        md = self.path("diff.md")
+        js = self.path("diff.json.out")
+        r = self.diff(diff_report(10, 3), "--exempt", "--markdown", md, "--json", js)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        with open(md, encoding="utf-8") as fh:
+            text = fh.read()
+        self.assertIn("70.00%", text)
+        self.assertIn("EXEMPT", text)
+        self.assertIn("coverage-exempt", text)
+        with open(js, encoding="utf-8") as fh:
+            verdict = json.load(fh)
+        self.assertEqual(verdict["status"], "EXEMPT")
+        self.assertEqual(verdict["percent"], 70.0)
+        self.assertEqual(verdict["covered"], 7)
+        self.assertEqual(verdict["total"], 10)
+        self.assertEqual(verdict["threshold"], 80)
+
+    def test_diff_exempt_does_not_change_a_passing_result(self):
+        js = self.path("diff.json.out")
+        r = self.diff(diff_report(10, 1), "--exempt", "--json", js)
+        self.assertEqual(r.returncode, 0)
+        with open(js, encoding="utf-8") as fh:
+            self.assertEqual(json.load(fh)["status"], "PASS")
+
+    def test_diff_with_no_coverable_lines_is_no_lines(self):
+        md = self.path("diff.md")
+        js = self.path("diff.json.out")
+        r = self.diff(diff_report(0, 0), "--markdown", md, "--json", js)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        with open(md, encoding="utf-8") as fh:
+            text = fh.read()
+        self.assertIn("no coverable line of components/cn105 changed", text)
+        with open(js, encoding="utf-8") as fh:
+            verdict = json.load(fh)
+        self.assertEqual(verdict["status"], "NO_LINES")
+        self.assertIsNone(verdict["percent"])
+
+    def test_diff_markdown_lists_per_file_violations(self):
+        stats = {
+            "components/cn105/a.cpp": {
+                "percent_covered": 50.0,
+                "violation_lines": [10, 11],
+                "covered_lines": [12, 13],
+            }
+        }
+        md = self.path("diff.md")
+        r = self.diff(diff_report(4, 2, stats), "--markdown", md)
+        self.assertEqual(r.returncode, 1)
+        with open(md, encoding="utf-8") as fh:
+            text = fh.read()
+        self.assertIn("components/cn105/a.cpp", text)
+        self.assertIn("10", text)
+        self.assertIn("11", text)
+        self.assertIn("50.00%", text)
+
+    def test_diff_report_missing_violations_key_exits_two(self):
+        report = diff_report(10, 2)
+        del report["total_num_violations"]
+        self.assertEqual(self.diff(report).returncode, 2)
+
+    def test_diff_report_missing_file_exits_two(self):
+        r = self.run_cli("diff", "--report", self.path("absent.json"), "--threshold", "80")
+        self.assertEqual(r.returncode, 2)
+
+    def test_diff_report_with_inconsistent_counts_exits_two(self):
+        self.assertEqual(self.diff(diff_report(3, 5)).returncode, 2)
+
+    def test_diff_report_malformed_json_exits_two(self):
+        d = self.write_text("diff.json", "[")
+        r = self.run_cli("diff", "--report", d, "--threshold", "80")
+        self.assertEqual(r.returncode, 2)
+
+    def test_diff_bad_threshold_exits_two(self):
+        d = self.write_json("diff.json", diff_report(10, 2))
+        r = self.run_cli("diff", "--report", d, "--threshold", "eighty")
+        self.assertEqual(r.returncode, 2)
+
+
+class CommentTargetTest(TempDirTestCase):
+    COMMENTS = [
+        {"id": 9, "body": MARKER + " a"},
+        {"id": 4, "body": "x " + MARKER},
+        {"id": 2, "body": "unrelated"},
+    ]
+
+    def target(self, text):
+        c = self.write_text("comments.json", text)
+        return self.run_cli("comment-target", "--comments", c, "--marker", MARKER)
+
+    def test_comment_target_picks_the_smallest_matching_id_from_an_array(self):
+        r = self.target(json.dumps(self.COMMENTS))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.strip(), "4")
+
+    def test_comment_target_accepts_json_lines(self):
+        r = self.target("\n".join(json.dumps(c) for c in self.COMMENTS) + "\n")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.strip(), "4")
+
+    def test_comment_target_single_json_line(self):
+        r = self.target(json.dumps(self.COMMENTS[0]) + "\n")
+        self.assertEqual(r.stdout.strip(), "9")
+
+    def test_comment_target_compares_ids_numerically(self):
+        comments = [{"id": 10, "body": MARKER}, {"id": 9, "body": MARKER}]
+        self.assertEqual(self.target(json.dumps(comments)).stdout.strip(), "9")
+
+    def test_comment_target_prints_nothing_without_a_match(self):
+        r = self.target(json.dumps([{"id": 2, "body": "unrelated"}]))
+        self.assertEqual(r.returncode, 0)
+        self.assertEqual(r.stdout, "")
+
+    def test_comment_target_empty_input_prints_nothing(self):
+        r = self.target("")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout, "")
+
+    def test_comment_target_missing_file_exits_two(self):
+        r = self.run_cli("comment-target", "--comments", self.path("absent.json"), "--marker", MARKER)
+        self.assertEqual(r.returncode, 2)
+
+    def test_comment_target_malformed_line_exits_two(self):
+        r = self.target(json.dumps(self.COMMENTS[0]) + "\n{broken\n")
+        self.assertEqual(r.returncode, 2)
+
+    def test_comment_target_entry_without_id_exits_two(self):
+        r = self.target(json.dumps([{"body": MARKER}]))
+        self.assertEqual(r.returncode, 2)
+
+
 if __name__ == "__main__":
     unittest.main()
