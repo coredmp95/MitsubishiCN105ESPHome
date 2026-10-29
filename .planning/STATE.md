@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 1
 current_phase_name: Coverage Safety Net
 status: executing
-stopped_at: Completed 01-01-PLAN.md
-last_updated: "2026-10-29T20:23:41.140Z"
+stopped_at: Completed 01-04-PLAN.md
+last_updated: "2026-10-29T20:30:24.261Z"
 last_activity: 2026-10-29
 last_activity_desc: Phase 1 execution started
-state_head: a4cde09517eb93ccdd17f5bdbc96c7965baafeff
+state_head: c6264394c76fc873229104b8d78a677d63231f03
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 15
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-27)
 ## Current Position
 
 Phase: 1 (Coverage Safety Net) — EXECUTING
-Plan: 2 of 15
+Plan: 3 of 15
 Status: Ready to execute
 Last activity: 2026-10-29 — Phase 1 execution started
 
@@ -57,6 +57,7 @@ Progress: [░░░░░░░░░░] 0%
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 01 P01 | 35 min | 3 tasks | 37 files |
+| Phase 01 P04 | 30 min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -71,6 +72,7 @@ Recent decisions affecting current work:
 - [Roadmap]: One PR per phase, each releasable on its own; no YAML/entity-ID breaks
 - [Phase 01]: 01-01: pure-test include dirs moved to target scope; CN105_HARNESS ON only for 32-bit builds
 - [Phase 01]: 01-01: harness preference backends owned by a static pool so ESPPreferenceObject pointers survive TestPrefs::clear()
+- [Phase 01]: 01-04: coverage_gate.py uses exact Fraction arithmetic on counts; a 0.1-point drop passes, FAIL > RATCHET > OK; lowered baseline fails unless toolchain changed; complete only adds manifest-listed headers as 0/0
 
 ### Pending Todos
 
@@ -93,6 +95,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-29T20:23:41.114Z
-Stopped at: Completed 01-01-PLAN.md
+Last session: 2026-10-29T20:30:24.233Z
+Stopped at: Completed 01-04-PLAN.md
 Resume file: None

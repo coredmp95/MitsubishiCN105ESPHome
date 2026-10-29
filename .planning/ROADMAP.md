@@ -40,12 +40,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Each PR shows the coverage of its changed lines, so an untested modification is visible in review without opening the full report.
   4. Characterization tests for `cycle_management`, `request_scheduler`, `hp_writings`/`writePacket`, `climateControls` and the state handling in the profiles pass against the unmodified production code, now compiled into the unit-test build; they pin today's behaviour, known quirks included (absolute-timestamp comparisons, optimistic publish, single pending-packet slot), which later phases flip knowingly.
   5. Phase gate: all pre-existing unit tests still pass, the 7 CI ESPHome configs still compile, and the shipped component's behaviour is unchanged (production edits limited to behaviour-preserving testability seams, if any).
-**Plans:** 1/15 plans executed (PR 1a: 01-01..01-11, PR 1b: 01-12..01-15)
+**Plans:** 2/15 plans executed (PR 1a: 01-01..01-11, PR 1b: 01-12..01-15)
 
 Plans:
 **Wave 1**
 - [x] 01-01-PLAN.md — [1a] Host harness tracer: real ESPHome 2026.10.0 core + unmodified cn105 under GoogleTest, ESP32 -m32 variant, test clock and platform control API, fixture base, Docker dev image
-- [ ] 01-04-PLAN.md — [1a] Coverage gate logic in stdlib Python (ratchet, propose, scope, diff 80%, sticky-comment target) with unittest self-test
+- [x] 01-04-PLAN.md — [1a] Coverage gate logic in stdlib Python (ratchet, propose, scope, diff 80%, sticky-comment target) with unittest self-test
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 01-02-PLAN.md — [1a] Harness fixture completion (handshake, poll cycle, command, publishes, real frames), run-harness.sh, CN105_COVERAGE + coverage-only header TUs
@@ -168,7 +168,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Coverage Safety Net | 1/15 | In Progress | - |
+| 1. Coverage Safety Net | 2/15 | In Progress | - |
 | 2. Heat Pump Simulator | 0/TBD | Not started | - |
 | 3. ESPHome Host End-to-End Job | 0/TBD | Not started | - |
 | 4. Critical Timing Fixes | 0/TBD | Not started | - |
