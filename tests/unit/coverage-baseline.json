@@ -1,12 +1,15 @@
 {
-  "line": 0.0,
-  "branch": 0.0,
-  "provisional": true,
+  "line": 67.05,
+  "branch": 60.08,
+  "line_covered": 2088,
+  "line_total": 3114,
+  "branch_covered": 1284,
+  "branch_total": 2137,
   "toolchain": {
     "gcc": "13.3.0",
     "gcovr": "8.6",
     "esphome": "2026.10.0",
     "os": "ubuntu 24.04"
   },
-  "source": "provisional - replaced by the first ubuntu-24.04 CI run in plan 01-11 (D-20)"
+  "source": "CI run 40960306032 (ubuntu-24.04)"
 }
