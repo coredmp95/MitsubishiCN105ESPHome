@@ -570,6 +570,176 @@ def cmd_complete(args):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Diff coverage (D-13)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def parse_threshold(text):
+    try:
+        value = Fraction(Decimal(str(text)))
+    except Exception:
+        raise GateInputError("threshold is not a number: %s" % text)
+    if value < 0 or value > 100:
+        raise GateInputError("threshold must be between 0 and 100: %s" % text)
+    return value
+
+
+def evaluate_diff(total, violations, threshold, exempt):
+    """Return (status, percent) for a diff-cover result.
+
+    Integer comparison covered * 100 >= threshold * total, so exactly 80% passes.
+    percent is a Fraction, or None when no coverable line changed.
+    """
+    if total == 0:
+        return "NO_LINES", None
+    covered = total - violations
+    percent_value = Fraction(covered * 100, total)
+    if covered * 100 >= threshold * total:
+        return "PASS", percent_value
+    return ("EXEMPT" if exempt else "FAIL"), percent_value
+
+
+def read_diff_report(path):
+    report = load_json(path, "diff-cover report")
+    if not isinstance(report, dict):
+        raise GateInputError("diff-cover report must be a JSON object")
+    total = report.get("total_num_lines")
+    violations = report.get("total_num_violations")
+    if not _is_count(total) or not _is_count(violations):
+        raise GateInputError(
+            "diff-cover report lacks integer total_num_lines / total_num_violations"
+        )
+    if violations > total:
+        raise GateInputError("diff-cover report has more violations than changed lines")
+    return report, total, violations
+
+
+def _threshold_number(threshold):
+    return int(threshold) if threshold.denominator == 1 else float(threshold)
+
+
+def render_diff_markdown(status, percent_value, covered, total, threshold, src_stats):
+    thr = "%s%%" % _fmt(threshold)
+    lines = ["### Diff coverage (changed lines of components/cn105)", ""]
+    if status == "NO_LINES":
+        lines.append("**Diff coverage: NO_LINES** - no coverable line of components/cn105 changed.")
+    else:
+        measured = "%s%% (%d/%d changed lines covered)" % (_fmt(percent_value), covered, total)
+        if status == "PASS":
+            lines.append("**Diff coverage: PASS** - %s, threshold %s." % (measured, thr))
+        elif status == "EXEMPT":
+            lines.append(
+                "**Diff coverage: EXEMPT** - measured %s, below the %s threshold; "
+                "exempted by the coverage-exempt label." % (measured, thr)
+            )
+        else:
+            lines.append("**Diff coverage: FAIL** - %s, below the %s threshold." % (measured, thr))
+    rows = []
+    if isinstance(src_stats, dict):
+        for name in sorted(src_stats):
+            stats = src_stats[name] if isinstance(src_stats[name], dict) else {}
+            pct = stats.get("percent_covered")
+            violation_lines = stats.get("violation_lines") or []
+            rows.append(
+                "| %s | %s | %s |"
+                % (
+                    name,
+                    ("%s%%" % _fmt(pct)) if _is_number(pct) else "n/a",
+                    ", ".join(str(n) for n in violation_lines) if violation_lines else "-",
+                )
+            )
+    if rows:
+        lines += ["", "| File | Covered | Uncovered changed lines |", "|---|---|---|"] + rows
+    return "\n".join(lines) + "\n"
+
+
+def cmd_diff(args):
+    threshold = parse_threshold(args.threshold)
+    report, total, violations = read_diff_report(args.report)
+    status, percent_value = evaluate_diff(total, violations, threshold, args.exempt)
+    covered = total - violations
+
+    if status == "NO_LINES":
+        print("Diff coverage: NO_LINES - no coverable line of components/cn105 changed")
+    else:
+        print(
+            "Diff coverage: %s - %s%% (%d/%d changed lines covered), threshold %s%%"
+            % (status, _fmt(percent_value), covered, total, _fmt(threshold))
+        )
+    if args.markdown:
+        write_text(
+            args.markdown,
+            render_diff_markdown(status, percent_value, covered, total, threshold, report.get("src_stats")),
+        )
+    if args.json:
+        write_json_file(
+            args.json,
+            {
+                "status": status,
+                "percent": None if percent_value is None else round(float(percent_value), 2),
+                "threshold": _threshold_number(threshold),
+                "covered": covered,
+                "total": total,
+                "exempt": bool(args.exempt),
+            },
+        )
+    return 1 if status == "FAIL" else 0
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Sticky PR comment (D-07)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def parse_comments(path):
+    """A JSON array of comment objects, or JSON Lines with one object per line."""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            text = fh.read()
+    except FileNotFoundError:
+        raise GateInputError("comments file not found: %s" % path)
+    except (OSError, UnicodeDecodeError) as exc:
+        raise GateInputError("comments file unreadable (%s): %s" % (exc, path))
+    if not text.strip():
+        return []
+    try:
+        data = json.loads(text)
+        items = data if isinstance(data, list) else [data]
+    except json.JSONDecodeError:
+        items = []
+        for number, line in enumerate(text.splitlines(), 1):
+            if not line.strip():
+                continue
+            try:
+                items.append(json.loads(line))
+            except json.JSONDecodeError as exc:
+                raise GateInputError("comments line %d is not valid JSON (%s)" % (number, exc))
+    return items
+
+
+def select_comment(comments, marker):
+    """The smallest id (the oldest comment) whose body contains the marker, or None."""
+    ids = []
+    for item in comments:
+        if not isinstance(item, dict) or not isinstance(item.get("body"), str):
+            raise GateInputError("a comment lacks a string body")
+        if marker not in item["body"]:
+            continue
+        try:
+            ids.append(int(item["id"]))
+        except (KeyError, TypeError, ValueError):
+            raise GateInputError("a matching comment lacks an integer id")
+    return min(ids) if ids else None
+
+
+def cmd_comment_target(args):
+    target = select_comment(parse_comments(args.comments), args.marker)
+    if target is not None:
+        print(target)
+    return 0
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # CLI
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -607,6 +777,19 @@ def build_parser():
     p.add_argument("--compiled-headers", required=True)
     p.add_argument("--markdown")
     p.set_defaults(func=cmd_complete)
+
+    p = sub.add_parser("diff", help="apply the 80%% changed-line rule to a diff-cover JSON report")
+    p.add_argument("--report", required=True)
+    p.add_argument("--threshold", required=True)
+    p.add_argument("--exempt", action="store_true")
+    p.add_argument("--markdown")
+    p.add_argument("--json")
+    p.set_defaults(func=cmd_diff)
+
+    p = sub.add_parser("comment-target", help="print the id of the oldest comment holding the marker")
+    p.add_argument("--comments", required=True)
+    p.add_argument("--marker", required=True)
+    p.set_defaults(func=cmd_comment_target)
     return parser
 
 
