@@ -1,7 +1,11 @@
 ## CMakeLists.txt — host harness: the real ESPHome 2026.10.0 core, built per platform variant
 ## Role: provides function cn105_harness_variant(VARIANT) creating, per variant <v> in {esp32, esp8266}:
-##         harness_flags_<v> (INTERFACE: defines, include order, force-include),
-##         esphome_<v>       (STATIC: the ESPHome core/component sources the harness needs).
+##         harness_flags_<v>    (INTERFACE: defines, include order, force-include),
+##         esphome_<v>          (STATIC: the ESPHome core/component sources the harness needs),
+##         harness_platform_<v> (STATIC: test clock, log capture, preferences, Wi-Fi, HAL stubs),
+##         cn105_<v>            (OBJECT: every components/cn105/*.cpp, compiled unmodified).
+##       Each instantiated variant is appended to the global property CN105_HARNESS_VARIANTS, which
+##       tests/unit/characterization/CMakeLists.txt iterates over.
 ##       Nothing in the fetched ESPHome tree is patched; the HAL is replaced at link level only.
 ## Deps: CMake >= 3.14, git (FetchContent), a 32-bit toolchain (g++-multilib, see tests/unit/docker/run.sh)
 
@@ -98,6 +102,20 @@ function(cn105_harness_variant VARIANT)
     endforeach()
     add_library(esphome_${VARIANT} STATIC ${SOURCES})
     target_link_libraries(esphome_${VARIANT} PUBLIC harness_flags_${VARIANT})
+
+    # Test platform: the clock, logger, preferences and Wi-Fi stubs plus the variant HAL stubs. These
+    # are the only definitions of those symbols (esphome_<v> compiles no platform .cpp).
+    add_library(harness_platform_${VARIANT} STATIC
+        "${CN105_HARNESS_DIR}/platform/test_platform.cpp"
+        "${CN105_HARNESS_DIR}/platform/stubs_${VARIANT}.cpp")
+    target_link_libraries(harness_platform_${VARIANT} PUBLIC harness_flags_${VARIANT})
+
+    # The unmodified production sources (D-03, D-10): the glob picks up every present and future TU.
+    file(GLOB CN105_SOURCES CONFIGURE_DEPENDS "${CN105_SRC_DIR}/*.cpp")
+    add_library(cn105_${VARIANT} OBJECT ${CN105_SOURCES})
+    target_link_libraries(cn105_${VARIANT} PUBLIC harness_flags_${VARIANT})
+
+    set_property(GLOBAL APPEND PROPERTY CN105_HARNESS_VARIANTS ${VARIANT})
 endfunction()
 
 cn105_harness_variant(esp32)
