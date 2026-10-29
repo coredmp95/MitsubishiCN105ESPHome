@@ -131,6 +131,7 @@ Extra wishes recorded by earlier plans:
 | 9 | Lossnay `0x03`, `0x06` and `0x04` info replies | On a Lossnay unit capture the replies to those three requests. Today an unanswered `0x03` ends every Lossnay cycle by timeout after 3 s, so the `0x09` captures are only fed as the answer to `0x03` | Natural Lossnay cycle and power/energy decode in `ProfileStateLossnay` (plan 01-10), Phase 8 |
 | 10 | A heat-pump `0x06` reply with the operating byte set (compressor running, HEAT) | Capture the `0x06` poll while the compressor runs in HEAT. Only `STATUS_IDLE` exists today | HEATING / COOLING action without the stage fallback (plan 01-10) |
 | 11 | A heat-pump `0x02` reply in AUTO mode (mode byte `0x08`) and one with a HEAT_COOL-compatible state | Put the unit in AUTO, capture the `0x02` poll; repeat with a HEAT_COOL band set from HA | Real-frame reconciliation of a HEAT_COOL band after a poll (`restore_setpoints()`, plan 01-10) |
+| 12 | A `0x04` error-info reply carrying a real error code (code and sub-code non-zero) | While the unit reports a fault (or from its error history), capture the reply to the `FC 42 ... 04` info request; only the `0x80` "No Error" reply exists today | Decode of a non-zero `Error 0x.. sub 0x..` through `ReadingsDecodeSensors` (plan 01-13) |
 
 ## How headers are counted
 
