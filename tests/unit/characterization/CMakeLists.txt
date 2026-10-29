@@ -23,6 +23,13 @@ foreach(VARIANT ${CN105_VARIANTS})
     # The cn105 objects come from the OBJECT library, compiled without it: components/cn105 is untouched.
     target_compile_options(cn105_char_${VARIANT} PRIVATE -fno-access-control)
 
+    # gcov: the test and fixture TUs too, because header-only inline code executed from a test is
+    # recorded only in the TU that instantiates it. Never esphome_<v>, harness_platform_<v> or GoogleTest.
+    if(CN105_COVERAGE)
+        target_compile_options(cn105_char_${VARIANT} PRIVATE --coverage)
+        target_link_options(cn105_char_${VARIANT} PRIVATE --coverage)
+    endif()
+
     # Static-library order: the platform stubs resolve what esphome_<v> leaves undefined and vice versa,
     # hence the platform library appears on both sides of it.
     target_link_libraries(cn105_char_${VARIANT} PRIVATE

@@ -22,6 +22,10 @@ FetchContent_MakeAvailable(googletest)
 # Source du composant (chemin relatif vers components/cn105)
 set(CN105_SRC_DIR "${CMAKE_SOURCE_DIR}/../../components/cn105")
 
+# gcov instrumentation (D-06, D-09). Per target, never through the global CMAKE_CXX_FLAGS: a global flag
+# would instrument the CompilerId objects (breaks gcovr), GoogleTest and the fetched ESPHome core.
+option(CN105_COVERAGE "Instrument components/cn105 and the tests with --coverage (gcov)" OFF)
+
 # Stubs ESPHome and component headers: attached to the pure-test targets only. They are not
 # directory-scoped because the characterization harness (add_subdirectory below) builds against the
 # real ESPHome headers, which mocks/ would shadow (version.h, climate_mode.h).
@@ -54,6 +58,11 @@ target_link_libraries(cn105_tests
     GTest::gtest_main
 )
 
+if(CN105_COVERAGE)
+    target_compile_options(cn105_tests PRIVATE --coverage)
+    target_link_options(cn105_tests PRIVATE --coverage)
+endif()
+
 # Discovery des tests pour ctest
 enable_testing()
 include(GoogleTest)
@@ -64,6 +73,10 @@ add_executable(cn105_legacy_action_tests test_climate_action.cpp)
 target_include_directories(cn105_legacy_action_tests PRIVATE ${CMAKE_SOURCE_DIR}/mocks ${CN105_SRC_DIR})
 target_compile_definitions(cn105_legacy_action_tests PRIVATE "ESPHOME_VERSION_CODE=VERSION_CODE(2026,2,0)")
 target_link_libraries(cn105_legacy_action_tests GTest::gtest_main)
+if(CN105_COVERAGE)
+    target_compile_options(cn105_legacy_action_tests PRIVATE --coverage)
+    target_link_options(cn105_legacy_action_tests PRIVATE --coverage)
+endif()
 gtest_discover_tests(cn105_legacy_action_tests TEST_PREFIX "LegacyESPHome.")
 
 # ── Characterization harness (real ESPHome core, unmodified components/cn105, -m32) ──

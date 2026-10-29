@@ -3,7 +3,9 @@
 ##         harness_flags_<v>    (INTERFACE: defines, include order, force-include),
 ##         esphome_<v>          (STATIC: the ESPHome core/component sources the harness needs),
 ##         harness_platform_<v> (STATIC: test clock, log capture, preferences, Wi-Fi, HAL stubs),
-##         cn105_<v>            (OBJECT: every components/cn105/*.cpp, compiled unmodified).
+##         cn105_<v>            (OBJECT: every components/cn105/*.cpp, compiled unmodified),
+##         cn105_headers_<v>    (OBJECT, only with CN105_COVERAGE=ON: one generated coverage-only
+##                               translation unit per components/cn105 header, never linked).
 ##       Each instantiated variant is appended to the global property CN105_HARNESS_VARIANTS, which
 ##       tests/unit/characterization/CMakeLists.txt iterates over.
 ##       Nothing in the fetched ESPHome tree is patched; the HAL is replaced at link level only.
@@ -114,6 +116,46 @@ function(cn105_harness_variant VARIANT)
     file(GLOB CN105_SOURCES CONFIGURE_DEPENDS "${CN105_SRC_DIR}/*.cpp")
     add_library(cn105_${VARIANT} OBJECT ${CN105_SOURCES})
     target_link_libraries(cn105_${VARIANT} PUBLIC harness_flags_${VARIANT})
+
+    if(CN105_COVERAGE)
+        # Only the production objects are instrumented here; the test objects and the executable get
+        # --coverage in characterization/CMakeLists.txt. esphome_<v>, harness_platform_<v> and
+        # GoogleTest are never instrumented.
+        target_compile_options(cn105_${VARIANT} PRIVATE --coverage)
+
+        # ── Coverage-only header translation units (D-10) ──
+        # Why: GCC emits an inline function (including a member function defined in a class body) only
+        # in a translation unit that uses it. A header whose code no test calls would leave no gcov
+        # record and silently drop out of the report, and diff coverage would then pass on it without
+        # data. One generated TU per header (cn105.h first, then the header itself) compiled with
+        # --coverage -fkeep-inline-functions makes GCC emit every non-template inline function of the
+        # header, so its lines exist in a .gcno and count as 0% until a test executes them (gcovr reads
+        # a .gcno without .gcda as 0%, and merges counts per file and line with the TUs tests run).
+        # These objects are compiled only for their .gcno: they are never linked into an executable and
+        # no test references them, because forced emission also emits ESPHome and libstdc++ inline
+        # functions that may call symbols the harness does not define.
+        # Defined limits: template code produces lines only where a shipped .cpp or a test instantiates
+        # it (an uninstantiated template has no object code in the firmware either), and macro bodies
+        # are attributed to their expansion site.
+        # No -fno-access-control: this is production code (D-21). Nothing is added to components/cn105
+        # (D-03): the generated files live in the build tree. file(GENERATE) rewrites a file only when
+        # its content changed and keeps the 3.14 minimum of this project.
+        file(GLOB CN105_HEADERS CONFIGURE_DEPENDS "${CN105_SRC_DIR}/*.h")
+        set(CN105_HEADER_TUS "")
+        foreach(header ${CN105_HEADERS})
+            get_filename_component(header_name "${header}" NAME)
+            set(header_tu "${CMAKE_CURRENT_BINARY_DIR}/header_tu_${VARIANT}/${header_name}.cpp")
+            file(GENERATE OUTPUT "${header_tu}" CONTENT
+"// generated coverage-only header TU (D-10): compiled for its .gcno, never linked
+#include \"cn105.h\"
+#include \"${header_name}\"
+")
+            list(APPEND CN105_HEADER_TUS "${header_tu}")
+        endforeach()
+        add_library(cn105_headers_${VARIANT} OBJECT ${CN105_HEADER_TUS})
+        target_link_libraries(cn105_headers_${VARIANT} PUBLIC harness_flags_${VARIANT})
+        target_compile_options(cn105_headers_${VARIANT} PRIVATE --coverage -fkeep-inline-functions)
+    endif()
 
     set_property(GLOBAL APPEND PROPERTY CN105_HARNESS_VARIANTS ${VARIANT})
 endfunction()
