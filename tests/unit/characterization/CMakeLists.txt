@@ -1,6 +1,6 @@
 ## CMakeLists.txt — characterization test executables, one per harness variant
 ## Role: builds cn105_char_<v> from fixture.cpp, every test_*.cpp in this directory and the
-##       unmodified cn105 objects of the variant; registers the tests with ctest (prefix "Esp32.").
+##       unmodified cn105 objects of the variant; registers the tests with ctest (prefix "Esp32." / "Esp8266.").
 ##       Later plans only add test_*.cpp files here.
 ## Deps: tests/unit/harness/CMakeLists.txt (variant targets), GoogleTest (from the parent project)
 

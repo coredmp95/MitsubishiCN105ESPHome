@@ -22,8 +22,8 @@
 ##             64 usage error.
 set -euo pipefail
 
-# Variants known to the harness; plan 01-03 adds esp8266 here.
-HARNESS_VARIANTS="esp32"
+# Variants known to the harness (one cn105_char_<variant> binary each).
+HARNESS_VARIANTS="esp32 esp8266"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"

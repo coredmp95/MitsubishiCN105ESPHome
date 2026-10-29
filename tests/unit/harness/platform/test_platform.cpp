@@ -146,6 +146,17 @@ void esp_log_printf_(int level, const char *tag, int line, const char *format, .
     va_end(args);
 }
 
+#ifdef USE_ESP8266
+// ESPHOME_LOG_FORMAT() wraps literals in PSTR(), which is a plain const char* on the host, so this
+// overload is only reached by code that passes an explicit F("...") string.
+void esp_log_printf_(int level, const char *tag, int line, const __FlashStringHelper *format, ...) {
+    va_list args;
+    va_start(args, format);
+    esp_log_vprintf_(level, tag, line, reinterpret_cast<const char *>(format), args);
+    va_end(args);
+}
+#endif
+
 #ifdef USE_ESP32
 int esp_idf_log_vprintf_(const char *format, va_list args) {
     esp_log_vprintf_(ESPHOME_LOG_LEVEL_ERROR, "esp-idf", 0, format, args);
@@ -201,6 +212,48 @@ bool ESP32Preferences::reset() { return true; }
 static esp32::ESP32Preferences g_prefs;
 ESPPreferences *global_preferences = &g_prefs;
 #endif  // USE_ESP32
+
+// ════ Preferences (ESP8266 backend replaced by an in-memory store) ════════════════════════════
+#ifdef USE_ESP8266
+namespace esp8266 {
+
+namespace {
+std::map<uint32_t, std::vector<uint8_t>> &store() { return cn105_test::pref_store(); }
+// Owned by a static pool so the raw pointer inside an ESPPreferenceObject stays valid across
+// TestPrefs::clear() (same contract as the ESP32 variant).
+std::vector<std::unique_ptr<ESP8266PreferenceBackend>> &backends() {
+    static std::vector<std::unique_ptr<ESP8266PreferenceBackend>> b;
+    return b;
+}
+}  // namespace
+
+bool ESP8266PreferenceBackend::save(const uint8_t *data, size_t len) {
+    store()[this->type].assign(data, data + len);
+    return true;
+}
+
+bool ESP8266PreferenceBackend::load(uint8_t *data, size_t len) {
+    auto it = store().find(this->type);
+    if (it == store().end() || it->second.size() != len) return false;
+    memcpy(data, it->second.data(), len);
+    return true;
+}
+
+void ESP8266Preferences::setup() {}
+ESPPreferenceObject ESP8266Preferences::make_preference(size_t, uint32_t type, bool in_flash) {
+    backends().emplace_back(new ESP8266PreferenceBackend());
+    backends().back()->type = type;
+    backends().back()->in_flash = in_flash;
+    return ESPPreferenceObject(backends().back().get());
+}
+bool ESP8266Preferences::sync() { return true; }
+bool ESP8266Preferences::reset() { return true; }
+
+}  // namespace esp8266
+
+static esp8266::ESP8266Preferences g_prefs;
+ESPPreferences *global_preferences = &g_prefs;
+#endif  // USE_ESP8266
 
 // ════ Wi-Fi stub ══════════════════════════════════════════════════════════════════════════════
 namespace wifi {

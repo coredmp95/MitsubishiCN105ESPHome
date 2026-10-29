@@ -87,8 +87,16 @@ function(cn105_harness_variant VARIANT)
         "${CN105_SRC_DIR}")
     # Like ESPHome's own precompiled header: without the force-include, climate_mode.h -> log.h would
     # define ESPHOME_LOG_LEVEL as NONE before the overlay defines.h is seen.
+    set(FORCE_INCLUDES "")
+    if(VARIANT STREQUAL "esp8266")
+        # USE_ESP8266 variant: the ESP8266 Arduino core's <pgmspace.h> (shim_esp8266) must be the very first include of every
+        # translation unit: otherwise <cstring> is first included inside namespace esphome and breaks.
+        # ARDUINO is deliberately not defined (Globals.h would then include <Arduino.h>).
+        # SHELL: keeps each "-include <file>" pair intact (CMake de-duplicates repeated bare options).
+        list(APPEND FORCE_INCLUDES "SHELL:-include pgmspace.h")
+    endif()
     target_compile_options(harness_flags_${VARIANT} INTERFACE
-        -include esphome/core/defines.h -O0 -g)
+        ${FORCE_INCLUDES} "SHELL:-include esphome/core/defines.h" -O0 -g)
 
     if(VARIANT STREQUAL "esp32")
         set(WAKE_SOURCE core/wake/wake_freertos.cpp)
@@ -161,3 +169,4 @@ function(cn105_harness_variant VARIANT)
 endfunction()
 
 cn105_harness_variant(esp32)
+cn105_harness_variant(esp8266)
