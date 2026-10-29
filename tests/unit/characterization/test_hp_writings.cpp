@@ -9,11 +9,13 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <string>
 #include <vector>
 
 #include "cn105_protocol.h"
 #include "hvac_option_switch.h"
+#include "van_orientation_select.h"
 #include "real_frames.h"
 
 namespace {
@@ -440,4 +442,222 @@ TEST_F(HpWritingsAirPurifier, Characterize_BUG03_RunStatesPublishedAndClearedAft
     EXPECT_FALSE(hp().wantedRunStates.hasChanged);
     EXPECT_EQ(hp().wantedRunStates.air_purifier, -1);
     EXPECT_GT(hp().loopCycle.lastCompleteCycleMs, static_cast<unsigned long>(cn105_test::TestClock::now()));
+}
+
+// ════════════════════════════════════════════════════════════════
+// SET packet content versus the real captures of test_real_frames.cpp
+// ════════════════════════════════════════════════════════════════
+
+/// Drives a connected, polled component into the decoded state of a real 0x02 frame, performs an action
+/// and returns the 0x41 frames the component wrote.
+class HpWritingsSetFrames : public HpWritings {
+   protected:
+    std::vector<std::vector<uint8_t>> set_frames_after(const std::vector<uint8_t>& settings_response,
+                                                       const std::function<void()>& act) {
+        connect();
+        if (HasFatalFailure()) return {};
+        auto responses = default_responses();
+        responses[0x02] = settings_response;
+        run_poll_cycle(responses);
+        take_tx();
+        act();
+        run_for(2000);
+        std::vector<std::vector<uint8_t>> set_frames;
+        for (auto& f : take_tx_frames()) {
+            if (f.size() > 1 && f[1] == 0x41) set_frames.push_back(f);
+        }
+        return set_frames;
+    }
+
+    void before_setup(esphome::CN105Climate& hp) override { hp.set_vertical_vane_select(&vane_select_); }
+    esphome::VaneOrientationSelect vane_select_;
+};
+
+TEST_F(HpWritingsSetFrames, Characterize_SetFrameMatchesRealCapture_Heat21_5) {
+    const auto frames = set_frames_after(cn105_test::real_frames::SETTINGS_OFF_HEAT_19_5, [this] {
+        hp().make_call().set_mode(esphome::climate::CLIMATE_MODE_HEAT).set_target_temperature(21.5f).perform();
+    });
+    ASSERT_EQ(frames.size(), 1u);
+    const auto expected = cn105_test::with_checksum(cn105_test::real_frames::SET_HEAT_21_5);
+    EXPECT_EQ(frames[0], expected) << hex(frames[0]) << " vs real " << hex(expected);
+}
+
+TEST_F(HpWritingsSetFrames, Characterize_SetFrameMatchesRealCapture_FanOnly19_5) {
+    const auto frames = set_frames_after(cn105_test::real_frames::SETTINGS_OFF_HEAT_19_5, [this] {
+        hp().make_call().set_mode(esphome::climate::CLIMATE_MODE_FAN_ONLY).set_target_temperature(19.5f).perform();
+    });
+    ASSERT_EQ(frames.size(), 1u);
+    const auto expected = cn105_test::with_checksum(cn105_test::real_frames::SET_FAN_ONLY_19_5);
+    EXPECT_EQ(frames[0], expected) << hex(frames[0]) << " vs real " << hex(expected);
+}
+
+TEST_F(HpWritingsSetFrames, Characterize_SetFrameMatchesRealCapture_Off21_5) {
+    const auto frames = set_frames_after(cn105_test::real_frames::SETTINGS_ON_HEAT_21_5, [this] {
+        hp().make_call().set_mode(esphome::climate::CLIMATE_MODE_OFF).set_target_temperature(21.5f).perform();
+    });
+    ASSERT_EQ(frames.size(), 1u);
+    const auto expected = cn105_test::with_checksum(cn105_test::real_frames::SET_OFF_21_5);
+    EXPECT_EQ(frames[0], expected) << hex(frames[0]) << " vs real " << hex(expected);
+}
+
+TEST_F(HpWritingsSetFrames, Characterize_SetFrameMatchesRealCapture_FanMedium) {
+    const auto frames = set_frames_after(cn105_test::real_frames::SETTINGS_ON_HEAT_21_5, [this] {
+        hp().make_call().set_fan_mode(esphome::climate::CLIMATE_FAN_MEDIUM).perform();
+    });
+    ASSERT_EQ(frames.size(), 1u);
+    const auto expected = cn105_test::with_checksum(cn105_test::real_frames::SET_FAN_MEDIUM);
+    EXPECT_EQ(frames[0], expected) << hex(frames[0]) << " vs real " << hex(expected);
+}
+
+TEST_F(HpWritingsSetFrames, Characterize_SetFrameMatchesRealCapture_VaneSwing) {
+    const auto frames = set_frames_after(cn105_test::real_frames::SETTINGS_FAN2_VANE_UP, [this] {
+        hp().make_call().set_swing_mode(esphome::climate::CLIMATE_SWING_VERTICAL).perform();
+    });
+    ASSERT_EQ(frames.size(), 1u);
+    const auto expected = cn105_test::with_checksum(cn105_test::real_frames::SET_VANE_SWING);
+    EXPECT_EQ(frames[0], expected) << hex(frames[0]) << " vs real " << hex(expected);
+}
+
+TEST_F(HpWritingsSetFrames, Characterize_SetFrameMatchesRealCapture_VaneUp) {
+    // The vane position "2" (up) is not reachable through the climate API: it comes from the vertical vane
+    // select, which is how users set it.
+    const auto frames = set_frames_after(cn105_test::real_frames::SETTINGS_ON_HEAT_21_5, [this] {
+        vane_select_.control("\xE2\x86\x91");  // "↑" = VANE_MAP[2], byte 0x02
+    });
+    ASSERT_EQ(frames.size(), 1u);
+    const auto expected = cn105_test::with_checksum(cn105_test::real_frames::SET_VANE_UP);
+    EXPECT_EQ(frames[0], expected) << hex(frames[0]) << " vs real " << hex(expected);
+}
+
+// ════════════════════════════════════════════════════════════════
+// Send throttle, ACK, installer-mode handshake
+// ════════════════════════════════════════════════════════════════
+
+TEST_F(HpWritings, Characterize_SendWantedSettingsThrottle300ms) {
+    connect();
+    ASSERT_FALSE(HasFatalFailure());
+    run_poll_cycle();
+    take_tx();
+
+    hp().make_call().set_mode(esphome::climate::CLIMATE_MODE_HEAT).set_target_temperature(23.0f).perform();
+    ASSERT_TRUE(hp().wantedSettings.hasChanged);
+
+    hp().buildAndSendInfoPacket(0x02);  // any write stamps lastSend
+    take_tx();
+    const unsigned long stamped = hp().lastSend;
+
+    // The test drives sendWantedSettings() directly and moves the clock without loop(), so the comparison
+    // millis() - lastSend > 300 is the only thing under test (strictly greater).
+    cn105_test::TestClock::advance(300);
+    ASSERT_EQ(static_cast<unsigned long>(esphome::millis()) - stamped, 300ul);
+    hp().sendWantedSettings();
+    EXPECT_TRUE(take_tx().empty());
+    EXPECT_TRUE(cn105_test::TestLog::contains("will sendWantedSettings later because we've sent one too recently"));
+    EXPECT_TRUE(hp().wantedSettings.hasChanged) << "still pending";
+
+    cn105_test::TestClock::advance(1);
+    hp().sendWantedSettings();
+    const auto frames = take_tx_frames();
+    ASSERT_EQ(frames.size(), 1u);
+    EXPECT_EQ(frames[0][1], 0x41);
+    EXPECT_FALSE(hp().wantedSettings.hasChanged);
+}
+
+TEST_F(HpWritings, Characterize_AckFrame0x61ChangesNothing) {
+    connect();
+    ASSERT_FALSE(HasFatalFailure());
+    run_poll_cycle();
+    take_tx();
+    hp().make_call().set_mode(esphome::climate::CLIMATE_MODE_COOL).set_target_temperature(24.0f).perform();
+    publishes_.clear();
+
+    const auto current_before = hp().currentSettings;
+    const bool changed_before = hp().wantedSettings.hasChanged;
+    const char* wanted_mode_before = hp().wantedSettings.mode;
+    cn105_test::TestClock::advance(500);
+    const unsigned long response_before = hp().lastResponseMs;
+
+    // SYNTHETIC — no 0x61 capture in the repo (D-23): FC 61 01 30 10 followed by 16 zero bytes, checksum
+    // appended by feed(). processCommand() only looks at the command byte for 0x61 and updateSuccess() is
+    // empty. Replace with a real capture of the ACK that follows a 0x41 SET.
+    std::vector<uint8_t> ack = {0xFC, 0x61, 0x01, 0x30, 0x10};
+    ack.resize(21, 0x00);
+    feed(ack);
+    step(10);  // loop() reads the frame; with input present it starts no write
+
+    EXPECT_TRUE(take_tx().empty());
+    EXPECT_TRUE(publishes_.empty());
+    EXPECT_TRUE(cn105_test::TestLog::contains("Last heatpump data update successful"));
+    EXPECT_EQ(hp().wantedSettings.hasChanged, changed_before);
+    EXPECT_EQ(hp().wantedSettings.mode, wanted_mode_before);
+    EXPECT_TRUE(hp().currentSettings == current_before);
+    // A checksum-valid frame of any type counts as a heat pump response for the link watchdog.
+    EXPECT_GT(hp().lastResponseMs, response_before);
+}
+
+class HpWritingsInstaller : public HpWritings {
+   protected:
+    cn105_test::Cn105Options options() const override {
+        cn105_test::Cn105Options opts;
+        opts.installer_mode = true;
+        return opts;
+    }
+};
+
+TEST_F(HpWritingsInstaller, Characterize_InstallerModeConnectUses0x5B) {
+    std::vector<uint8_t> written;
+    for (uint32_t waited = 0; written.empty() && waited < 30000; waited += 10) {
+        step(10);
+        written = take_tx();
+    }
+    // Same frame as the standard CONNECT with the command byte 0x5B and the checksum recomputed (0xA7).
+    const std::vector<uint8_t> expected = {0xFC, 0x5B, 0x01, 0x30, 0x02, 0xCA, 0x01, 0xA7};
+    EXPECT_EQ(written, expected) << hex(written);
+    EXPECT_TRUE(cn105_test::TestLog::contains("Installateur"));
+}
+
+TEST_F(HpWritingsInstaller, Characterize_InstallerModeFallsBackTo0x5AAfter10s) {
+    std::vector<uint8_t> written;
+    for (uint32_t waited = 0; written.empty() && waited < 30000; waited += 10) {
+        step(10);
+        written = take_tx();
+    }
+    ASSERT_EQ(written.size(), 8u);
+    ASSERT_EQ(written[1], 0x5B);
+    const uint32_t first_connect_at = cn105_test::TestClock::now();
+
+    // No reply: after the 10 s checkFirstConnection timeout the installer handshake is abandoned for good
+    // (installer_mode_fallback_done_) and CONNECT goes out again in standard mode.
+    uint32_t fallback_at = 0;
+    std::vector<uint8_t> second;
+    for (uint32_t waited = 0; second.empty() && waited < 20000; waited += 10) {
+        step(10);
+        second = take_tx();
+        if (!second.empty()) fallback_at = cn105_test::TestClock::now() - first_connect_at;
+    }
+    EXPECT_EQ(second, kConnectFrame) << hex(second);
+    EXPECT_GE(fallback_at, 10000u);
+    EXPECT_LE(fallback_at, 10020u);
+    EXPECT_TRUE(cn105_test::TestLog::contains("No reply to installer handshake (0x5B). Falling back to standard handshake (0x5A)."));
+    EXPECT_FALSE(hp().installer_mode_effective_);
+    EXPECT_TRUE(hp().installer_mode_fallback_done_);
+}
+
+TEST_F(HpWritingsInstaller, Characterize_InstallerModeAccepts0x7BReply) {
+    std::vector<uint8_t> written;
+    for (uint32_t waited = 0; written.empty() && waited < 30000; waited += 10) {
+        step(10);
+        written = take_tx();
+    }
+    ASSERT_EQ(written[1], 0x5B);
+
+    // SYNTHETIC — no 0x7B capture in the repo (D-23): the standard reply FC 7A 01 30 01 00 (real, 0x54) with
+    // the command byte changed to 0x7B, checksum recomputed by feed(). Replace with a real installer-mode
+    // reply captured from a unit that accepts 0x5B.
+    feed({0xFC, 0x7B, 0x01, 0x30, 0x01, 0x00});
+    step(10);
+
+    EXPECT_TRUE(hp().isHeatpumpConnected());
+    EXPECT_TRUE(cn105_test::TestLog::contains("connection success (Installer, 0x7B)"));
+    EXPECT_TRUE(hp().installer_mode_effective_) << "no fallback when the reply arrives";
 }
