@@ -64,7 +64,52 @@ jobs:
         retention-days: 14
 
   # ──────────────────────────────────────────────
-  # Job 2 — ESPHome compile (existing matrix)
+  # Job 2 — Coverage gate
+  # Downloads the report of unit-tests, then: gate self-test (D-14), ratchet on line and branch
+  # coverage (D-11, D-12), diff coverage of the changed lines with the coverage-exempt label
+  # exemption (D-07, D-13), and one sticky PR comment. All logic lives in
+  # tests/unit/tools/ci_coverage_gate.sh; workflow context values reach it only through env:.
+  # esphome-build does not depend on this job, so a policy failure never hides compile feedback.
+  # ──────────────────────────────────────────────
+  coverage-gate:
+    name: Coverage gate
+    needs: unit-tests
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+    - uses: actions/checkout@v5
+      with:
+        fetch-depth: 0
+
+    - name: Download coverage report
+      uses: actions/download-artifact@v8
+      with:
+        name: coverage-report
+        path: tests/unit/out
+
+    - name: Install coverage toolchain
+      run: |
+        python3 -m venv "$RUNNER_TEMP/covenv"
+        "$RUNNER_TEMP/covenv/bin/pip" install --require-virtualenv --only-binary=:all: \
+          -r tests/unit/requirements-coverage.lock.txt
+        echo "$RUNNER_TEMP/covenv/bin" >> "$GITHUB_PATH"
+
+    - name: Coverage gate
+      run: tests/unit/tools/ci_coverage_gate.sh
+      env:
+        EVENT_NAME: ${{ github.event_name }}
+        BASE_REF: ${{ github.base_ref }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        REPO: ${{ github.repository }}
+        SAME_REPO: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+        GH_TOKEN: ${{ github.token }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+  # ──────────────────────────────────────────────
+  # Job 3 — ESPHome compile (existing matrix)
   # Now depends on unit-tests passing first.
   # ──────────────────────────────────────────────
   esphome-build:
