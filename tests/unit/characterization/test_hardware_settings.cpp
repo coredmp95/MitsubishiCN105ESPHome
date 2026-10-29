@@ -165,9 +165,8 @@ TEST_F(HardwareSettings, Characterize_FunctionsGetButtonSchedules0x20And0x22) {
     ASSERT_FALSE(HasFatalFailure());
 
     // First cycle: the interval timer of 0x20/0x22 has never run, so 0x20 leaves right after the standard
-    // requests. No 0x20 reply capture exists, so it goes unanswered: the cycle ends by its 3 s timeout and 0x22
-    // is left to the next cycle (an unanswered request ends the cycle; the next one starts with the standard
-    // requests again).
+    // requests. No 0x20 reply capture exists, so it goes unanswered: it has no soft timeout, so the 3 s cycle
+    // timeout ends the cycle and 0x22 is left to the next cycle, which starts with the standard requests again.
     EXPECT_EQ(run_poll_cycle(), (std::vector<uint8_t>{0x02, 0x03, 0x06, 0x09, 0x04, 0x20}));
     EXPECT_EQ(run_poll_cycle(), (std::vector<uint8_t>{0x02, 0x03, 0x06, 0x09, 0x04, 0x22}));
     // Nothing more within the 24 h interval: the following cycles carry the standard requests only.

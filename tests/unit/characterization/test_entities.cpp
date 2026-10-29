@@ -599,10 +599,11 @@ TEST_F(EntitiesUptime, Characterize_UptimeConnectionSensorPublishes) {
     EXPECT_NE(uptime_.unique_id().find("-uptime-hp_connection"), std::string::npos);
     uptime_.dump_config();
 
-    // The first CONNECT frame resets the sensor to "not connected": 0 is published.
+    // The bootstrap (UART setup, CONNECT write) stops the sensor twice and the reply starts it: 0 is published
+    // three times on the way to the connection.
     connect();
     ASSERT_FALSE(HasFatalFailure());
-    ASSERT_FALSE(values_.empty());
+    EXPECT_EQ(values_, (std::vector<float>{0.0f, 0.0f, 0.0f}));
     const size_t after_connect = values_.size();
     EXPECT_FLOAT_EQ(values_.back(), 0.0f) << "start() publishes the elapsed time since the connection: 0 s";
 
