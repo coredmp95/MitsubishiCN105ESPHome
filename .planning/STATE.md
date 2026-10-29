@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 1
 current_phase_name: Coverage Safety Net
 status: executing
-stopped_at: Completed 01-07-PLAN.md
-last_updated: "2026-10-29T20:48:31.014Z"
+stopped_at: Completed 01-08-PLAN.md
+last_updated: "2026-10-29T20:56:41.674Z"
 last_activity: 2026-10-29
 last_activity_desc: Phase 1 execution started
-state_head: 72175f0eb2f9361a6756e1ba8cf54f50f345bbba
+state_head: f616822697197301419610ee12b522132e6cb1eb
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 15
-  completed_plans: 5
+  completed_plans: 6
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-27)
 ## Current Position
 
 Phase: 1 (Coverage Safety Net) — EXECUTING
-Plan: 6 of 15
+Plan: 7 of 15
 Status: Ready to execute
 Last activity: 2026-10-29 — Phase 1 execution started
 
@@ -61,6 +61,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P02 | 25min | 2 tasks | 8 files |
 | Phase 1 P03 | 25 min | 2 tasks | 12 files |
 | Phase 01 P07 | 35min | 3 tasks | 2 files |
+| Phase 01 P08 | 40 min | 3 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -80,6 +81,8 @@ Recent decisions affecting current work:
 - [Phase 1]: 01-03: ESP8266 harness variant compiles the volatile-bool emulateMutex branch, pinned by a static_assert on wantedSettingsMutex per variant
 - [Phase 1]: 01-03: harness force-includes use SHELL:-include pairs because CMake de-duplicates repeated bare -include options
 - [Phase 01]: 01-07: late 0x03 response while 0x06 awaited pinned as a duplicated 0x06 request (LINK-04); BUG-01 and BUG-07 pinned on both variants
+- [Phase 01]: 01-08: 'UART not ready' retry is only reachable with an unconfigurable UART; no production path returns the FSM below CONNECTING after boot
+- [Phase 01]: 01-08: try_write_pending_packet clears has_pending_packet_ after a re-queue, so a SET packet is lost if the link is still inactive at the 4000 ms retry (pinned, LINK-02)
 
 ### Pending Todos
 
@@ -102,6 +105,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-29T20:48:30.987Z
-Stopped at: Completed 01-07-PLAN.md
+Last session: 2026-10-29T20:56:41.647Z
+Stopped at: Completed 01-08-PLAN.md
 Resume file: None
