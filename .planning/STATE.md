@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 1
 current_phase_name: Coverage Safety Net
 status: executing
-stopped_at: Completed 01-09-PLAN.md
-last_updated: "2026-10-29T21:04:12.790Z"
+stopped_at: Completed 01-10-PLAN.md
+last_updated: "2026-10-29T21:13:54.707Z"
 last_activity: 2026-10-29
 last_activity_desc: Phase 1 execution started
-state_head: 6e23a93308cca6b4144c632f1d3c8c0a4b354dba
+state_head: a70698159172d59a517920e9f16e11659ebde4e7
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 15
-  completed_plans: 7
+  completed_plans: 8
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-27)
 ## Current Position
 
 Phase: 1 (Coverage Safety Net) — EXECUTING
-Plan: 8 of 15
+Plan: 9 of 15
 Status: Ready to execute
 Last activity: 2026-10-29 — Phase 1 execution started
 
@@ -63,6 +63,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P07 | 35min | 3 tasks | 2 files |
 | Phase 01 P08 | 40 min | 3 tasks | 1 files |
 | Phase 01 P09 | 35min | 3 tasks | 1 files |
+| Phase 01 P10 | 45 min | 3 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -86,6 +87,7 @@ Recent decisions affecting current work:
 - [Phase 01]: 01-08: try_write_pending_packet clears has_pending_packet_ after a re-queue, so a SET packet is lost if the link is still inactive at the 4000 ms retry (pinned, LINK-02)
 - [Phase 01]: 01-09: BUG-08 debounce arithmetic keeps working past 2^31 under -m32 through signed wrap-around (UB); Phase 4 flip is behaviour-neutral
 - [Phase 01]: 01-09: emulateMutex retry schedule pinned (deferrals at 0,100,220,364,536,742,989,1285,1640,2066 ms, forced at 2577 ms); Phase 7 CLEAN-01 removes it
+- [Phase 01]: 01-10: dead guard logs (pending user temp, post-send grace) pinned as absent; Lossnay connected state via real rejected reply + handleConnectionSuccess(), no invented frame
 
 ### Pending Todos
 
@@ -108,6 +110,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-29T21:04:12.761Z
-Stopped at: Completed 01-09-PLAN.md
+Last session: 2026-10-29T21:13:54.678Z
+Stopped at: Completed 01-10-PLAN.md
 Resume file: None

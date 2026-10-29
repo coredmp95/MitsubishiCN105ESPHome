@@ -174,7 +174,7 @@ For plan 01-12 to turn into the capture request (no frame was invented in this p
 
 ## Verification Results
 
-- `tests/unit/run-harness.sh --docker --variant all --filter 'ProfileState*'`: esp32 17/17... see note: the filter selects 9 `ProfileState*` heat pump tests plus 8 `ProfileStateLossnay` tests = 17 per variant; `[run-harness] OK: esp32 esp8266`.
+- `tests/unit/run-harness.sh --docker --variant all --filter 'ProfileState*'`: 17 tests per variant (9 heat pump + 8 `ProfileStateLossnay`); `[run-harness] OK: esp32 esp8266`.
 - `--filter 'ProfileStateLossnay.*'`: 8 per variant, OK. Full suite: ESP32 101, ESP8266 102, all pass.
 - `git diff --quiet origin/main -- components/cn105`: clean (D-03).
 - `! grep -n SYNTHETIC test_profile_state.cpp`: no match. `grep -c LOSSNAY_` = 14, `grep -c 'real_frames::CONNECT_REPLY'` = 2, `grep -c 'Ignoring setpoint'` = 6.
