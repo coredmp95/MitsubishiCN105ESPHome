@@ -1,0 +1,6 @@
+# requirements-coverage.txt - top-level pins of the coverage tooling (COV-01..COV-03)
+# Install only into a virtualenv; tests/unit/coverage.sh creates one (tests/unit/.venv-coverage) and
+# installs with `pip --require-virtualenv --only-binary=:all:` from requirements-coverage.lock.txt.
+# Both pins were approved by a human after a package-legitimacy check (plan 01-05, T-01-SC).
+gcovr==8.6
+diff-cover==10.6.0

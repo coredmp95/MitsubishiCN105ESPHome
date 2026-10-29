@@ -75,3 +75,8 @@ issues/closed/issue_204_Remote_current_Temperature_overwritten_by_local_current_
 issues/closed/issue_446_In_Auto_mode_HA_thermostat_card_cannot_control_target_temperature.md
 issues/closed/issue_482_CN105_still_cant_detect_when_gas_is_running_doing_some_troubleshooting.md
 tests/unit/build/
+
+# Characterization harness build outputs
+tests/unit/build-*/
+tests/unit/out/
+tests/unit/.venv-*/
