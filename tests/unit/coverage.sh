@@ -7,17 +7,23 @@
 ##       gcovr 8.6 and diff-cover 10.6.0 (installed into a virtualenv from requirements-coverage.lock.txt),
 ##       tests/unit/tools/coverage_gate.py
 ##
-## Usage: tests/unit/coverage.sh [--docker] [--ci] [--build-dir DIR] [--out DIR]
-##   --docker      re-run this script inside the ubuntu:24.04 + g++-multilib dev image
-##   --ci          skip the virtualenv bootstrap; gcovr and diff-cover must already be on PATH
-##   --build-dir   CMake build directory, default tests/unit/build-cov
-##   --out         report directory, default tests/unit/out
+## Usage: tests/unit/coverage.sh [--docker] [--ci] [--gate] [--check-scope] [--build-dir DIR] [--out DIR]
+##   --docker       re-run this script inside the ubuntu:24.04 + g++-multilib dev image
+##   --ci           skip the virtualenv bootstrap and the Docker re-exec; gcovr and diff-cover must already
+##                  be on PATH (this is what the CI job calls)
+##   --gate         fail with exit 5 when the ratchet verdict is FAIL (report-only without this flag)
+##   --check-scope  only re-run the scope check on an existing <out>/summary.json: no build, no tests
+##   --build-dir    CMake build directory, default tests/unit/build-cov
+##   --out          report directory, default tests/unit/out
+##   -h, --help     print this help
 ## Outputs (in --out): tf_esp32.json tf_esp8266.json tf_pure.json summary.json gcovr-summary.md
 ##                     coverage.xml html/index.html toolchain.json compiled-headers.txt complete.md
 ##                     scope.md gate.md gate.json report.md
 ## Exit codes: 0 ok; 1 build or test failure; 2 environment problem (no -m32, wrong tool version,
-##             no virtualenv support, bad usage); 3 scope failure (a components/cn105 .cpp or .h is
-##             missing from the report, or a header has no header-TU .gcno in a variant).
+##             no virtualenv support, missing summary for --check-scope, bad usage); 3 scope failure
+##             (a components/cn105 .cpp or .h is missing from the report, or a header has no header-TU
+##             .gcno in a variant); 5 ratchet FAIL with --gate.
+##             Precedence when several apply: 1, then 3, then 5. The reports are written either way.
 set -euo pipefail
 
 # The repo root comes from this script's location, never from git: inside the Docker image a git
@@ -31,13 +37,15 @@ HARNESS_VARIANTS="esp32 esp8266"
 
 USE_DOCKER=0
 CI_MODE=0
+GATE_MODE=0
+CHECK_SCOPE_ONLY=0
 BUILD_DIR="$SCRIPT_DIR/build-cov"
 OUT_DIR="$SCRIPT_DIR/out"
 ORIGINAL_ARGS=("$@")
 
 usage_error() {
     echo "[coverage] $1" >&2
-    echo "usage: tests/unit/coverage.sh [--docker] [--ci] [--build-dir DIR] [--out DIR]" >&2
+    echo "usage: tests/unit/coverage.sh [--docker] [--ci] [--gate] [--check-scope] [--build-dir DIR] [--out DIR] (see --help)" >&2
     exit 2
 }
 
@@ -52,6 +60,9 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --docker) USE_DOCKER=1 ;;
         --ci) CI_MODE=1 ;;
+        --gate) GATE_MODE=1 ;;
+        --check-scope) CHECK_SCOPE_ONLY=1 ;;
+        -h|--help) sed -n '2,/^set -euo/p' "${BASH_SOURCE[0]}" | grep '^##' | sed 's/^## \{0,1\}//'; exit 0 ;;
         --build-dir) [ $# -ge 2 ] || usage_error "--build-dir needs a value"; BUILD_DIR="$(abs_path "$2")"; shift ;;
         --out) [ $# -ge 2 ] || usage_error "--out needs a value"; OUT_DIR="$(abs_path "$2")"; shift ;;
         *) usage_error "unknown argument: $1" ;;
@@ -59,7 +70,7 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-if [ "$USE_DOCKER" -eq 1 ]; then
+if [ "$USE_DOCKER" -eq 1 ] && [ "$CI_MODE" -eq 0 ]; then
     # Re-execute inside the dev image, without --docker, keeping every other argument as given.
     INNER=("tests/unit/coverage.sh")
     for arg in "${ORIGINAL_ARGS[@]}"; do
@@ -67,6 +78,31 @@ if [ "$USE_DOCKER" -eq 1 ]; then
     done
     printf -v INNER_CMD '%q ' "${INNER[@]}"
     exec "$SCRIPT_DIR/docker/run.sh" "$INNER_CMD"
+fi
+
+# ── --check-scope: scope check only, on an existing summary ────────────────
+if [ "$CHECK_SCOPE_ONLY" -eq 1 ]; then
+    if [ ! -s "$OUT_DIR/summary.json" ]; then
+        echo "[coverage] $OUT_DIR/summary.json is missing: run tests/unit/coverage.sh first" >&2
+        exit 2
+    fi
+    SCOPE_ONLY_STATUS=0
+    (cd "$REPO_ROOT" && python3 "$SCRIPT_DIR/tools/coverage_gate.py" scope --summary "$OUT_DIR/summary.json" \
+        --source-dir components/cn105 --markdown "$OUT_DIR/scope.md") || SCOPE_ONLY_STATUS=$?
+    case "$SCOPE_ONLY_STATUS" in
+        0) exit 0 ;;
+        2) exit 2 ;;
+        *) exit 3 ;;
+    esac
+fi
+
+# A working -m32 toolchain is required (D-20); without it the CMake try-compile would fail late.
+PROBE_DIR="$(mktemp -d)"
+trap 'rm -rf "$PROBE_DIR"' EXIT
+printf 'int main() { return 0; }\n' > "$PROBE_DIR/probe.cpp"
+if ! g++ -m32 "$PROBE_DIR/probe.cpp" -o "$PROBE_DIR/probe" >/dev/null 2>&1; then
+    echo "[coverage] g++ -m32 cannot link a program on this machine: install g++-multilib or use --docker" >&2
+    exit 2
 fi
 
 # ── Tool bootstrap ──────────────────────────────────────────────────────────
@@ -100,15 +136,6 @@ fi
 GCOVR_VERSION="$(gcovr --version | head -n 1 | sed -n 's/^gcovr \([0-9][0-9.]*\).*/\1/p')"
 if [ "$GCOVR_VERSION" != "8.6" ]; then
     echo "[coverage] gcovr 8.6 is required, found '${GCOVR_VERSION:-unknown}'" >&2
-    exit 2
-fi
-
-# A working -m32 toolchain is required (D-20); without it the CMake try-compile would fail late.
-PROBE_DIR="$(mktemp -d)"
-trap 'rm -rf "$PROBE_DIR"' EXIT
-printf 'int main() { return 0; }\n' > "$PROBE_DIR/probe.cpp"
-if ! g++ -m32 "$PROBE_DIR/probe.cpp" -o "$PROBE_DIR/probe" >/dev/null 2>&1; then
-    echo "[coverage] g++ -m32 cannot link a program on this machine: install g++-multilib or use --docker" >&2
     exit 2
 fi
 
@@ -245,5 +272,13 @@ fi
 if [ "$SCOPE_STATUS" -ne 0 ]; then
     echo "[coverage] scope check failed (exit $SCOPE_STATUS): see $OUT_DIR/scope.md" >&2
     exit 3
+fi
+if [ "$GATE_MODE" -eq 1 ] && [ "$GATE_STATUS" -ne 0 ]; then
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        echo "[coverage] ratchet check could not run (bad input): see the messages above" >&2
+        exit 2
+    fi
+    echo "[coverage] ratchet FAIL: coverage dropped below the baseline (see $OUT_DIR/gate.md)" >&2
+    exit 5
 fi
 exit 0
