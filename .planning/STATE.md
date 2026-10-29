@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 01
+current_phase: 1
 current_phase_name: Coverage Safety Net
 status: executing
-stopped_at: Phase 1 context gathered
-last_updated: "2026-10-27T19:22:40.203Z"
-last_activity: 2026-10-27
-last_activity_desc: Roadmap created (8 phases, 34/34 v1 requirements mapped)
-state_head: 5dd3d33aa49047f7eab24f32b6bd41ef5b7c36e3
+stopped_at: Completed 01-01-PLAN.md
+last_updated: "2026-10-29T20:23:41.140Z"
+last_activity: 2026-10-29
+last_activity_desc: Phase 1 execution started
+state_head: a4cde09517eb93ccdd17f5bdbc96c7965baafeff
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 15
-  completed_plans: 0
+  completed_plans: 1
   percent: 0
 ---
 
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-27)
 
 **Core value:** The heat pump link never silently stalls or lies: polling keeps running indefinitely, user commands are either applied or visibly reported as failed, and Home Assistant shows the heat pump's real state (or "unavailable"), never stale or optimistic values.
-**Current focus:** Phase 1 - Coverage Safety Net
+**Current focus:** Phase 1 — Coverage Safety Net
 
 ## Current Position
 
-Phase: 01 (Coverage Safety Net) — READY TO EXECUTE
-Plan: 0 of 0 in current phase
+Phase: 1 (Coverage Safety Net) — EXECUTING
+Plan: 2 of 15
 Status: Ready to execute
-Last activity: 2026-10-27 - Roadmap created (8 phases, 34/34 v1 requirements mapped)
+Last activity: 2026-10-29 — Phase 1 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -52,6 +52,11 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: -
 
 *Updated after each plan completion*
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 01 P01 | 35 min | 3 tasks | 37 files |
 
 ## Accumulated Context
 
@@ -64,6 +69,8 @@ Recent decisions affecting current work:
 - [Roadmap]: Injectable clock split across phases - test-only `esphome::millis()` seam (Phase 1), simulated clock (Phase 2), production wrap-safe logic + clock abstraction (Phase 4)
 - [Roadmap]: Audit P1-P5 order kept after the safety net; Phase 7 (cleanup/CI) depends only on Phase 4
 - [Roadmap]: One PR per phase, each releasable on its own; no YAML/entity-ID breaks
+- [Phase 01]: 01-01: pure-test include dirs moved to target scope; CN105_HARNESS ON only for 32-bit builds
+- [Phase 01]: 01-01: harness preference backends owned by a static pool so ESPPreferenceObject pointers survive TestPrefs::clear()
 
 ### Pending Todos
 
@@ -86,6 +93,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-27T09:40:57.158Z
-Stopped at: Phase 1 context gathered
-Resume file: .planning/phases/01-coverage-safety-net/01-CONTEXT.md
+Last session: 2026-10-29T20:23:41.114Z
+Stopped at: Completed 01-01-PLAN.md
+Resume file: None
