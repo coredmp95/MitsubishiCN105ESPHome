@@ -540,7 +540,15 @@ class CompleteTest(ScopeCompleteTestCase):
         xml = COBERTURA.replace('filename="components/cn105/', 'filename="other/dir/')
         self.write_text("cobertura.xml", xml)
         self.assertEqual(self.complete().returncode, 0)
-        self.assertIn('name="components.cn105"', self.read("cobertura.xml").decode())
+        import xml.etree.ElementTree as ET
+
+        xml = self.read("cobertura.xml").decode()
+        root = ET.fromstring(xml.split("?>", 1)[1].split("\n", 2)[2])
+        packages = root.findall("./packages/package")
+        self.assertEqual(len(packages), 2)
+        created = packages[1]
+        self.assertEqual(created.get("name"), "components.cn105")
+        self.assertEqual([c.get("filename") for c in created.iter("class")], ["components/cn105/b.h"])
 
     def test_complete_with_malformed_xml_exits_two_and_leaves_files_untouched(self):
         self.setup_case(["components/cn105/b.h"])

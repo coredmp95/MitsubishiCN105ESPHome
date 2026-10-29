@@ -1,13 +1,17 @@
 ## coverage_gate.py — coverage policy CLI (ratchet, scope, diff coverage, sticky comment)
 ## Role: Holds every coverage gate decision (D-10..D-14) as tested pure functions; CI and coverage.sh only call it.
-## Deps: Python standard library only (argparse, decimal, fractions, json). No third-party import.
+## Deps: Python standard library only (argparse, decimal, fractions, json, xml.etree). No third-party import.
 ##
 ## Exit codes: 0 pass, 1 policy failure, 2 input or usage error (fail closed, never a silent pass).
 import argparse
 import json
 import math
 import os
+import posixpath
+import re
 import sys
+import tempfile
+import xml.etree.ElementTree as ET
 from decimal import ROUND_FLOOR, Decimal
 from fractions import Fraction
 
@@ -168,7 +172,7 @@ def format_metric_line(metric, res):
     )
 
 
-def render_ratchet_markdown(status, per_metric, proposal):
+def render_ratchet_markdown(status, per_metric, proposal, warnings=(), reasons=()):
     lines = [
         "| Metric | Status | Current | Baseline | Delta |",
         "|---|---|---|---|---|",
@@ -188,6 +192,12 @@ def render_ratchet_markdown(status, per_metric, proposal):
             )
         )
     lines.append("")
+    for message in warnings:
+        lines.append(message)
+        lines.append("")
+    for message in reasons:
+        lines.append("FAIL: " + message)
+        lines.append("")
     lines.append("**Coverage ratchet: %s**" % status)
     if status == "RATCHET":
         lines.append("")
@@ -208,28 +218,101 @@ def write_json_file(path, obj):
     write_text(path, json.dumps(obj, indent=2) + "\n")
 
 
+def toolchains_differ(first, second):
+    """True when two toolchain objects disagree on gcc, gcovr, esphome or os."""
+    first = first if isinstance(first, dict) else {}
+    second = second if isinstance(second, dict) else {}
+    return any(first.get(k) != second.get(k) for k in TOOLCHAIN_KEYS)
+
+
+def _toolchain_text(toolchain):
+    toolchain = toolchain if isinstance(toolchain, dict) else {}
+    return ", ".join("%s %s" % (k, toolchain.get(k, "?")) for k in TOOLCHAIN_KEYS)
+
+
+def check_lowered_baseline(baseline, previous):
+    """The 'baseline only goes up' rule against the base branch's baseline (T-01-04).
+
+    Returns (failed, message). A lowered baseline fails unless the recorded toolchain changed,
+    in which case it only warns. A provisional previous baseline is never compared.
+    """
+    if previous.get("provisional"):
+        return False, None
+    lowered = [
+        m
+        for m in METRICS
+        if baseline_percent(baseline[m]) < baseline_percent(previous[m])
+    ]
+    if not lowered:
+        return False, None
+    detail = ", ".join(
+        "%s %s%% -> %s%%" % (m, _fmt(baseline_percent(previous[m])), _fmt(baseline_percent(baseline[m])))
+        for m in lowered
+    )
+    if toolchains_differ(baseline.get("toolchain"), previous.get("toolchain")):
+        return False, (
+            "WARNING: baseline lowered (%s) but the toolchain changed (%s -> %s)"
+            % (detail, _toolchain_text(previous.get("toolchain")), _toolchain_text(baseline.get("toolchain")))
+        )
+    return True, "baseline lowered (%s) with an unchanged toolchain" % detail
+
+
 def cmd_ratchet(args):
     summary = load_json(args.summary, "summary")
     baseline = check_baseline(load_json(args.baseline, "baseline"))
     current = counts_from_summary(summary)
 
     status, per_metric = evaluate_ratchet(current, baseline, TOLERANCE)
+    warnings = []
+    reasons = []
 
-    toolchain = baseline.get("toolchain") if isinstance(baseline.get("toolchain"), dict) else {}
-    proposal = build_proposal(current, toolchain, "coverage_gate.py ratchet proposal")
+    baseline_toolchain = baseline.get("toolchain") if isinstance(baseline.get("toolchain"), dict) else {}
+    if args.toolchain:
+        toolchain = load_json(args.toolchain, "toolchain")
+        if not isinstance(toolchain, dict):
+            raise GateInputError("toolchain must be a JSON object")
+        if baseline_toolchain and toolchains_differ(toolchain, baseline_toolchain):
+            warnings.append(
+                "WARNING: toolchain differs from baseline (baseline: %s; current: %s)"
+                % (_toolchain_text(baseline_toolchain), _toolchain_text(toolchain))
+            )
+    else:
+        toolchain = baseline_toolchain
+
+    if args.previous_baseline and os.path.exists(args.previous_baseline):
+        previous = check_baseline(
+            load_json(args.previous_baseline, "previous baseline"), "previous baseline"
+        )
+        failed, message = check_lowered_baseline(baseline, previous)
+        if failed:
+            reasons.append(message)
+            status = "FAIL"
+        elif message:
+            warnings.append(message)
+
+    proposal = build_proposal(current, toolchain, args.source or "coverage_gate.py ratchet proposal")
 
     for metric in METRICS:
         print(format_metric_line(metric, per_metric[metric]))
+    for line in warnings:
+        print(line)
+    for line in reasons:
+        print("FAIL: " + line)
     print("Coverage ratchet: %s" % status)
     if status == "RATCHET":
         print("Proposed baseline (commit this as tests/unit/coverage-baseline.json):")
         print(json.dumps(proposal, indent=2))
 
     if args.markdown:
-        write_text(args.markdown, render_ratchet_markdown(status, per_metric, proposal))
+        write_text(
+            args.markdown,
+            render_ratchet_markdown(status, per_metric, proposal, warnings, reasons),
+        )
     if args.json:
         verdict = {
             "status": status,
+            "warnings": warnings,
+            "reasons": reasons,
             "metrics": {
                 m: {
                     "status": per_metric[m]["status"],
@@ -248,6 +331,244 @@ def cmd_ratchet(args):
     return 1 if status == "FAIL" else 0
 
 
+def cmd_propose(args):
+    summary = load_json(args.summary, "summary")
+    toolchain = load_json(args.toolchain, "toolchain")
+    if not isinstance(toolchain, dict):
+        raise GateInputError("toolchain must be a JSON object")
+    current = counts_from_summary(summary)
+    print(json.dumps(build_proposal(current, toolchain, args.source), indent=2))
+    return 0
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# D-10 scope: every .cpp and .h under the source dir is reported
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _norm(path):
+    return posixpath.normpath(path.replace(os.sep, "/"))
+
+
+def summary_files(summary, what="summary"):
+    """The files[] list of a gcovr --json-summary object, validated."""
+    files = summary.get("files") if isinstance(summary, dict) else None
+    if not isinstance(files, list):
+        raise GateInputError("%s has no files[] list" % what)
+    for item in files:
+        if not isinstance(item, dict) or not isinstance(item.get("filename"), str):
+            raise GateInputError("%s has a files[] entry without a filename" % what)
+    return files
+
+
+def source_files(source_dir):
+    """Root-relative paths of the *.cpp and *.h files directly under source_dir, sorted."""
+    if not os.path.isdir(source_dir):
+        raise GateInputError("source directory not found: %s" % source_dir)
+    base = _norm(source_dir)
+    names = sorted(
+        n
+        for n in os.listdir(source_dir)
+        if n.endswith((".cpp", ".h")) and os.path.isfile(os.path.join(source_dir, n))
+    )
+    return [posixpath.join(base, n) for n in names]
+
+
+def missing_from_summary(summary, source_dir):
+    reported = {_norm(f["filename"]) for f in summary_files(summary)}
+    missing = [p for p in source_files(source_dir) if p not in reported]
+    return (
+        [p for p in missing if p.endswith(".cpp")],
+        [p for p in missing if p.endswith(".h")],
+    )
+
+
+def render_scope(missing_cpp, missing_h):
+    lines = []
+    if missing_cpp or missing_h:
+        lines.append("**Coverage scope: FAIL** - files under the source directory are absent from the report")
+    else:
+        lines.append("**Coverage scope: OK**")
+    for heading, items in ((".cpp missing", missing_cpp), (".h missing", missing_h)):
+        if items:
+            lines.append("")
+            lines.append("%s:" % heading)
+            lines.extend("- %s" % item for item in items)
+    return "\n".join(lines) + "\n"
+
+
+def cmd_scope(args):
+    summary = load_json(args.summary, "summary")
+    missing_cpp, missing_h = missing_from_summary(summary, args.source_dir)
+    text = render_scope(missing_cpp, missing_h)
+    print(text, end="")
+    if args.markdown:
+        write_text(args.markdown, text)
+    return 1 if (missing_cpp or missing_h) else 0
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# D-10 complete: declaration-only headers are listed as 0/0
+# ═══════════════════════════════════════════════════════════════════════════
+
+NO_LINES_HEADING = "Headers with no executable lines (0/0)"
+XML_DECL = re.compile(r"^\s*(<\?xml[^>]*\?>)")
+XML_DOCTYPE = re.compile(r"<!DOCTYPE[^>]*>")
+
+
+def read_manifest(path):
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+    except FileNotFoundError:
+        raise GateInputError("compiled-headers manifest not found: %s" % path)
+    except (OSError, UnicodeDecodeError) as exc:
+        raise GateInputError("compiled-headers manifest unreadable (%s): %s" % (exc, path))
+    return {_norm(l.strip()) for l in lines if l.strip() and not l.strip().startswith("#")}
+
+
+def new_summary_entry(filename, template):
+    """A 0/0 entry with the same key set as a gcovr entry, flagged no_executable_lines."""
+    entry = {"filename": filename}
+    for key, value in (template or {}).items():
+        if key == "filename":
+            continue
+        if key.endswith("_percent"):
+            entry[key] = 0.0
+        elif _is_number(value):
+            entry[key] = 0
+        else:
+            entry[key] = type(value)() if value is not None else None
+    for key in ("line_total", "line_covered", "branch_total", "branch_covered"):
+        entry.setdefault(key, 0)
+    for key in ("line_percent", "branch_percent"):
+        entry.setdefault(key, 0.0)
+    entry["no_executable_lines"] = True
+    return entry
+
+
+def _class_dir(cls):
+    return posixpath.dirname(_norm(cls.get("filename", "")))
+
+
+def add_class_to_cobertura(root, filename, source_dir):
+    packages = root.find("packages")
+    if packages is None:
+        raise GateInputError("Cobertura XML has no <packages> element")
+    target = None
+    for package in packages.findall("package"):
+        classes = package.find("classes")
+        if classes is not None and any(_class_dir(c) == source_dir for c in classes.findall("class")):
+            target = package
+            break
+    if target is None:
+        target = ET.SubElement(
+            packages,
+            "package",
+            {
+                "name": source_dir.replace("/", "."),
+                "line-rate": "0.0",
+                "branch-rate": "0.0",
+                "complexity": "0.0",
+            },
+        )
+        ET.SubElement(target, "classes")
+    classes = target.find("classes")
+    if classes is None:
+        classes = ET.SubElement(target, "classes")
+    cls = ET.Element(
+        "class",
+        {
+            "name": re.sub(r"[^0-9A-Za-z]", "_", posixpath.basename(filename)),
+            "filename": filename,
+            "line-rate": "0.0",
+            "branch-rate": "0.0",
+            "complexity": "0.0",
+        },
+    )
+    ET.SubElement(cls, "methods")
+    ET.SubElement(cls, "lines")
+    existing = list(classes)
+    if existing:
+        # Keep the original indentation: the new class takes the old last tail.
+        cls.tail = existing[-1].tail
+        existing[-1].tail = classes.text if classes.text else existing[-1].tail
+    classes.append(cls)
+
+
+def parse_cobertura(path):
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            text = fh.read()
+        root = ET.fromstring(text.encode("utf-8"))
+    except FileNotFoundError:
+        raise GateInputError("Cobertura XML not found: %s" % path)
+    except (OSError, UnicodeDecodeError) as exc:
+        raise GateInputError("Cobertura XML unreadable (%s): %s" % (exc, path))
+    except ET.ParseError as exc:
+        raise GateInputError("Cobertura XML is not well-formed (%s): %s" % (exc, path))
+    decl = XML_DECL.match(text)
+    doctype = XML_DOCTYPE.search(text)
+    return root, (decl.group(1) if decl else None), (doctype.group(0) if doctype else None)
+
+
+def render_cobertura(root, decl, doctype):
+    parts = []
+    if decl:
+        parts.append(decl)
+    if doctype:
+        parts.append(doctype)
+    parts.append(ET.tostring(root, encoding="unicode"))
+    return "\n".join(parts) + "\n"
+
+
+def atomic_write(path, text):
+    directory = os.path.dirname(os.path.abspath(path))
+    fd, tmp_path = tempfile.mkstemp(dir=directory, prefix=".coverage_gate_")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.replace(tmp_path, path)
+    except BaseException:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise
+
+
+def cmd_complete(args):
+    summary = load_json(args.summary, "summary")
+    files = summary_files(summary)
+    root, decl, doctype = parse_cobertura(args.cobertura)
+    manifest = read_manifest(args.compiled_headers)
+
+    source_dir = _norm(args.source_dir)
+    reported = {_norm(f["filename"]) for f in files}
+    added = [
+        path
+        for path in source_files(args.source_dir)
+        if path.endswith(".h") and path not in reported and path in manifest
+    ]
+
+    if added:
+        template = files[0] if files else None
+        for path in added:
+            files.append(new_summary_entry(path, template))
+            add_class_to_cobertura(root, path, source_dir)
+        files.sort(key=lambda f: f["filename"])
+        summary_text = json.dumps(summary, indent=2) + "\n"
+        xml_text = render_cobertura(root, decl, doctype)
+        atomic_write(args.summary, summary_text)
+        atomic_write(args.cobertura, xml_text)
+
+    lines = [NO_LINES_HEADING + ":"] if added else ["No header needed a 0/0 entry."]
+    lines.extend("- %s" % path for path in added)
+    text = "\n".join(lines) + "\n"
+    print(text, end="")
+    if args.markdown:
+        write_text(args.markdown, ("### %s\n\n" % NO_LINES_HEADING if added else "") + text)
+    return 0
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # CLI
 # ═══════════════════════════════════════════════════════════════════════════
@@ -260,9 +581,32 @@ def build_parser():
     p = sub.add_parser("ratchet", help="compare a gcovr summary with the committed baseline")
     p.add_argument("--summary", required=True)
     p.add_argument("--baseline", required=True)
+    p.add_argument("--toolchain")
+    p.add_argument("--previous-baseline")
+    p.add_argument("--source")
     p.add_argument("--markdown")
     p.add_argument("--json")
     p.set_defaults(func=cmd_ratchet)
+
+    p = sub.add_parser("propose", help="print a complete baseline JSON for a gcovr summary")
+    p.add_argument("--summary", required=True)
+    p.add_argument("--toolchain", required=True)
+    p.add_argument("--source", required=True)
+    p.set_defaults(func=cmd_propose)
+
+    p = sub.add_parser("scope", help="fail when a .cpp or .h under the source dir is not reported")
+    p.add_argument("--summary", required=True)
+    p.add_argument("--source-dir", required=True)
+    p.add_argument("--markdown")
+    p.set_defaults(func=cmd_scope)
+
+    p = sub.add_parser("complete", help="list declaration-only compiled headers as 0/0")
+    p.add_argument("--summary", required=True)
+    p.add_argument("--cobertura", required=True)
+    p.add_argument("--source-dir", required=True)
+    p.add_argument("--compiled-headers", required=True)
+    p.add_argument("--markdown")
+    p.set_defaults(func=cmd_complete)
     return parser
 
 
