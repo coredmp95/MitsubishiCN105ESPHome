@@ -7,8 +7,9 @@
 ///                                the overlay defines USE_NATIVE_64BIT_TIME, the scheduler)
 ///         vTaskDelay(ticks)   -> TestClock::advance(ticks) (inline esphome::delay(); never sleeps)
 ///       esphome::delay, micros and millis_64 are inline in esp32/hal.h and get no definition here.
-///       Also: the remaining FreeRTOS / ESP-IDF / esphome::arch_* one-liners and the recorded
-///       IDF UART/GPIO calls (feed cn105_test::IdfRecorder).
+///       Also: the remaining FreeRTOS / ESP-IDF / esphome::arch_* one-liners, the recorded
+///       IDF UART/GPIO calls (feed cn105_test::IdfRecorder) and esphome::random_uint32()
+///       (-> cn105_test::TestRandom::next(), see the comment at its definition).
 /// Deps: test_platform.h, tests/unit/harness/shim_esp32 headers, esphome/core/hal.h
 
 #include <cstdint>
@@ -115,5 +116,11 @@ bool random_bytes(uint8_t *data, size_t len) {
     for (size_t i = 0; i < len; i++) data[i] = 4;
     return true;
 }
+// Replaces ESPHome's own random_uint32(): helpers.cpp is compiled in the ESP32 variant under the name
+// cn105_upstream_random_uint32 (generated TU in harness/CMakeLists.txt), so this is the only definition
+// the scheduler links against. The upstream one is a splitmix32 over a file-static state that no test can
+// reset and that advances on every call: the start offset of an interval then depended on how many draws
+// earlier tests of the same process had made.
+uint32_t random_uint32() { return cn105_test::TestRandom::next(); }
 
 }  // namespace esphome

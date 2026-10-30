@@ -1,7 +1,7 @@
-/// test_platform.h — control API of the host test platform (clock, logs, preferences, Wi-Fi, IDF calls)
+/// test_platform.h — control API of the host test platform (clock, random, logs, preferences, Wi-Fi, IDF calls)
 /// Role: lets a test observe and control everything the unmodified components/cn105 reaches
-///       through ESPHome: time, log lines, persistent preferences, the Wi-Fi component and the
-///       low-level ESP-IDF UART/GPIO calls. Part of the contract reused by the Phase 2 simulator.
+///       through ESPHome: time, random numbers, log lines, persistent preferences, the Wi-Fi component
+///       and the low-level ESP-IDF UART/GPIO calls. Part of the contract reused by the Phase 2 simulator.
 /// Deps: <cstdint>, <string>, <vector>. No ESPHome header: usable from any test translation unit.
 #pragma once
 
@@ -54,8 +54,24 @@ struct TestWifi {
     static void remove();
 };
 
+// ════ Random ══════════════════════════════════════════════════════════════════════════════════
+// The one source behind esphome::random_uint32() in both variants. It is a constant, not a sequence: a
+// generator that advances on every call makes a test depend on how many draws earlier tests made in the
+// same process (the upstream ESP32 random_uint32() is a splitmix32 over a file-static state, seeded once
+// per process, and ESPHome draws from it for the start offset of every set_interval()). A test must give
+// the same result alone, in a full run and in any order, so the value only changes when a test calls set().
+// ESPHome draws it for the start offset of an interval: offset = (value * min(interval / 2, 5000 ms)) >> 32,
+// so kDefault gives an offset of 0 ms (the first tick is immediate, the next ones are exactly one interval
+// apart) and set(0x80000000) gives half of the maximum (2500 ms for an interval of 10 s or more).
+struct TestRandom {
+    static constexpr uint32_t kDefault = 4;  // small and non-zero: offset 0 ms for every interval
+    static void reset();                     // back to kDefault
+    static void set(uint32_t value);         // what random_uint32() returns until the next reset
+    static uint32_t next();                  // used by stubs_<variant>.cpp
+};
+
 // ════ Resets ══════════════════════════════════════════════════════════════════════════════════
-// Resets clock, logs, preferences, Wi-Fi and (USE_ESP32) the IDF recorder in one call.
+// Resets clock, logs, preferences, Wi-Fi, the random value and (USE_ESP32) the IDF recorder in one call.
 void reset_platform(uint64_t start_ms = 0);
 
 #ifdef USE_ESP32

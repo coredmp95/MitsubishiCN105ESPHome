@@ -2,17 +2,17 @@
 gsd_state_version: "1.0"
 current_phase: 1
 current_phase_name: Coverage Safety Net
-status: executing
-stopped_at: Completed 01-11-PLAN.md
-last_updated: "2026-10-29T22:19:57.515Z"
+status: verifying
+stopped_at: Completed 01-15-PLAN.md
+last_updated: "2026-10-30T06:16:31.234Z"
 last_activity: 2026-10-29
 last_activity_desc: Phase 1 execution started
-state_head: 5bb49734bc163fbcc20b8cc6aa9a9adb166e39b8
+state_head: 3dea145c863d035466e80948d332777932956b14
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 15
-  completed_plans: 11
+  completed_plans: 15
   percent: 0
 ---
 
@@ -28,8 +28,8 @@ See: .planning/PROJECT.md (updated 2026-10-27)
 ## Current Position
 
 Phase: 1 (Coverage Safety Net) — EXECUTING
-Plan: 12 of 15
-Status: Ready to execute
+Plan: 15 of 15
+Status: Phase complete — ready for verification
 Last activity: 2026-10-29 — Phase 1 execution started
 
 Progress: [░░░░░░░░░░] 0%
@@ -67,6 +67,10 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P05 | 7 min | 3 tasks | 6 files |
 | Phase 01 P06 | 12 min | 3 tasks | 4 files |
 | Phase 01 P11 | 40 min | 3 tasks | 1 files |
+| Phase 1 P12 | 60min | 3 tasks | 3 files |
+| Phase 1 P13 | 75 min | 3 tasks | 3 files |
+| Phase 01 P14 | 15 min | 3 tasks | 3 files |
+| Phase 1 P15 | 55min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -95,6 +99,11 @@ Recent decisions affecting current work:
 - [Phase 01]: 01-05: coverage.sh exit precedence test failure (1) > scope (3) > ratchet gate (5); --ci skips virtualenv and Docker re-exec
 - [Phase 01]: 01-06: upload-artifact@v7 and download-artifact@v8 (independent latest majors); sticky PR comment built for every PR but posted only for same-repo PRs, comment failure is a warning
 - [Phase 01]: 01-11: .planning/ commits stay in PR 1a (#2, draft on coredmp95 fork); baseline CI-derived from run 40960306032 (line 67.05, branch 60.08); gate demonstrated on closed probe PR #3
+- [Phase 1]: [01-12] Capture decision existing-only: D-23 synthetic 0x61/0x7B frames stay, captured_frames_1b.h left empty, 11 wanted captures recorded in tests/unit/README.md
+- [Phase 1]: 01-13: BUG-08 pinned as observed - a gap above 2^31 ms leaves isHeatpumpConnectionActive() inactive (signed long compared with uint32_t is unsigned); the signed delta shows as a negative duration in the reconnect warning. Flip in Phase 4 (TIME-03)
+- [Phase 1]: 01-13: no DEFROST test (no real capture, existing-only); new wanted capture row 12 (non-zero 0x04 error code)
+- [Phase 01]: 01-14: quoted 0x06 status frames (checksums 0x3C/0xB7 verified) are the only non-zero status captures; no 0x42/0x20/0x22/Lossnay-handshake reply fed (no capture)
+- [Phase 1]: [01-15] PR 1b (#4) opened as a draft stacked on PR 1a (#2); baseline ratcheted to 84.87% lines / 73.84% branches from CI run 41010865084
 
 ### Pending Todos
 
@@ -117,6 +126,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-29T22:19:57.484Z
-Stopped at: Completed 01-11-PLAN.md
+Last session: 2026-10-30T06:16:31.189Z
+Stopped at: Completed 01-15-PLAN.md
 Resume file: None

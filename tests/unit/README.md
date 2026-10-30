@@ -101,6 +101,59 @@ job summary and the comment still show the measured diff coverage, marked `EXEMP
 - `deferCycle()` is pinned at 1500 ms, not 750 ms, because the harness runs at log level VERY_VERBOSE and
   the INFO-level branch is not compiled in.
 
+## Wanted captures
+
+Characterization never invents a frame (see above). These real CN105 captures do not exist in the
+repository yet; until they do, the paths below stay unpinned and the two D-23 synthetic frames stay in place.
+Maintainer decision for PR 1b: proceed with the existing frames only. When a capture arrives, add it to
+`characterization/captured_frames_1b.h` (frame without checksum, a comment with the capture file, date and
+scenario), write the test that feeds it, and delete the matching line here.
+
+Capture with the sniffer on the fork: `examples/sniffer/cn105-sniffer.yaml`, `tools/cn105_capture.py`,
+`docs/sniffing.md`. For each scenario, record between the official module (or this component) and the indoor
+unit.
+
+| # | Scenario to capture | How | Unblocks |
+|---|---|---|---|
+| 1 | `0x42` HVAC-options reply from a unit that has air purifier, night mode and circulator | Toggle each option once from the remote or the app, capture the reply to the `FC 42 ... 42` info request after each toggle | `hvac_options` decode (`decode_hvac_options`, the option switches) in PR 1b; Phase 6 (CMD-04) |
+| 2 | `0x20` and `0x22` functions replies | Enable `installer_mode`, press the "get functions" button once, then change one hardware setting and read the functions again | Functions decode and the `FunctionsNumber` / hardware select publish paths, PR 1b |
+| 3 | `0x61` ACK after a `0x41` SET (mode change) and after a `0x41`/`0x07` remote-temperature packet | Change the mode from HA once; push one remote temperature; capture the unit's answer to each write | Replaces the synthetic ACK in `HpWritings.Characterize_AckFrame0x61ChangesNothing` (D-23); the real ACK after `0x07` for the remote-temperature suite; Phase 6 (CMD-02) |
+| 4 | `0x09` reply while the unit defrosts (DEFROST sub-mode) | Capture the `0x09` poll during a defrost cycle (outdoor unit at low temperature, HEAT running a while) | Sub-mode DEFROST decode in `ProfileState*`, PR 1b |
+| 5 | `0x7B` installer-mode connect reply to a `0x5B` CONNECT | Set `installer_mode: true`, power-cycle the module and capture the reply to `FC 5B 01 30 02 CA 01` (expected `FC 7B 01 30 ...`). If the unit ignores `0x5B` and the component falls back to `0x5A` after 10 s, capture that too | Replaces the synthetic reply in `HpWritingsInstaller.Characterize_InstallerModeAccepts0x7BReply` (D-23); the fallback pin |
+| 6 | Lossnay handshake reply to CONNECT `0x5A` with profile `0x34` | On a Lossnay unit capture the reply to `FC 5A 01 34 02 CA 01 A4` (expected `FC 7A 01 34 ...`) | `ProfileStateLossnay` can connect through a real frame instead of the `handleConnectionSuccess()` shortcut; the Lossnay plan 01-14 |
+
+Extra wishes recorded by earlier plans:
+
+| # | Scenario to capture | How | Unblocks |
+|---|---|---|---|
+| 7 | A `0x41` SET carrying a `wideVane` change on a unit with horizontal vanes (swing HORIZONTAL / BOTH) | Change the horizontal vane from the remote or HA and capture the write | Horizontal swing encode in `ClimateControls*` (plan 01-09), Phase 7 |
+| 8 | A `0x41` SET in Fahrenheit mode | Switch the module to a Fahrenheit option, change the target temperature once and capture the write | Fahrenheit encode of commands (plan 01-09) |
+| 9 | Lossnay `0x03`, `0x06` and `0x04` info replies | On a Lossnay unit capture the replies to those three requests. Today an unanswered `0x03` ends every Lossnay cycle by timeout after 3 s, so the `0x09` captures are only fed as the answer to `0x03` | Natural Lossnay cycle and power/energy decode in `ProfileStateLossnay` (plan 01-10), Phase 8 |
+| 10 | A heat-pump `0x06` reply with the operating byte set (compressor running, HEAT) | Capture the `0x06` poll while the compressor runs in HEAT. Only `STATUS_IDLE` exists today | HEATING / COOLING action without the stage fallback (plan 01-10) |
+| 11 | A heat-pump `0x02` reply in AUTO mode (mode byte `0x08`) and one with a HEAT_COOL-compatible state | Put the unit in AUTO, capture the `0x02` poll; repeat with a HEAT_COOL band set from HA | Real-frame reconciliation of a HEAT_COOL band after a poll (`restore_setpoints()`, plan 01-10) |
+| 12 | A `0x04` error-info reply carrying a real error code (code and sub-code non-zero) | While the unit reports a fault (or from its error history), capture the reply to the `FC 42 ... 04` info request; only the `0x80` "No Error" reply exists today | Decode of a non-zero `Error 0x.. sub 0x..` through `ReadingsDecodeSensors` (plan 01-13) |
+
+## Determinism of the test platform
+
+Every characterization test must give the same result alone, under `ctest` (one process per test), in a
+full run and in any order. `reset_platform()` (called by the fixtures' `SetUp`) resets everything a test can
+observe: clock, log capture, preferences, Wi-Fi, the recorded IDF calls and the random value.
+
+- `esphome::random_uint32()` is a constant in both variants (`TestRandom`, default 4), not a sequence. ESPHome
+  draws from it for the start offset of every `set_interval()` (a random 0 to 5 s delay before the first
+  tick), so the default is an offset of 0 ms. A test that needs another offset pins it with
+  `TestRandom::set(value)` (offset = `(value * min(interval / 2, 5000)) >> 32`); the next `SetUp` resets it.
+- Why a constant and not a reseeded sequence: the upstream ESP32 `random_uint32()` is a splitmix32 over a
+  file-static state that no test can reset and that advances on every call, so the offset of a keep-alive
+  depended on how many draws the tests before it had made in the process (`RemoteTemperatureEntities.Characterize_SameValueDebounced` passed in a
+  full run and failed alone or under ctest). The ESP32 variant therefore compiles `core/helpers.cpp` through a
+  generated wrapper that renames the upstream function (the fetched file is included, not patched), and
+  `stubs_esp32.cpp` defines the real one on `TestRandom`. ESPHome has no such definition on ESP8266, where
+  `stubs_esp8266.cpp` always did. A constant also cannot shift when production code adds or removes a
+  `set_interval()` and moves every later draw.
+- To check a change for order dependence: `ctest -j8 --schedule-random`, and the binaries with
+  `--gtest_shuffle --gtest_random_seed=N` for a few seeds.
+
 ## How headers are counted
 
 A header with inline code only produces object code where something includes it. To keep header code
@@ -124,6 +177,8 @@ The harness uses the ESPHome release that the CI `stable` image uses today.
 2. Update the version overlay `tests/unit/harness/overlay/esphome/core/version.h`.
 3. Confirm that the CI `esphome-build` image (`ghcr.io/esphome/esphome:stable`) is the same version.
 4. Rebuild with `tests/unit/coverage.sh --docker`. Expect small shim edits under `harness/shim_*` and
-   `harness/platform`.
+   `harness/platform`. If `core/helpers.cpp` stops defining `random_uint32()` out of line (or the ESP8266
+   one starts to), the generated `helpers_esp32.cpp` wrapper in `harness/CMakeLists.txt` and the stubs'
+   `random_uint32()` fail to compile or link: adapt them, do not let the upstream generator back in.
 5. Record the new toolchain in `tests/unit/coverage-baseline.json` (the ratchet job warns when the
    toolchain differs from the recorded one).

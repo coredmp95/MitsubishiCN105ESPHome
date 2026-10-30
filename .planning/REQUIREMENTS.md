@@ -10,7 +10,7 @@ Source: `.planning/AUDIT-CN105-2026-10-27.md` (bug/debt/feature IDs in parenthes
 ### Coverage safety net (before any fix or refactor)
 
 - [x] **COV-01**: CI measures line and branch coverage of `components/cn105/` from the unit tests (gcov/lcov or gcovr) and publishes the report (job summary + artifact)
-- [ ] **COV-02**: A coverage baseline is recorded and CI fails if total coverage of `components/cn105/` drops below it (ratchet: the baseline only goes up)
+- [x] **COV-02**: A coverage baseline is recorded and CI fails if total coverage of `components/cn105/` drops below it (ratchet: the baseline only goes up)
 - [x] **COV-03**: Each PR reports coverage of changed lines (diff coverage), so untested modifications are visible in review
 - [x] **COV-04**: Characterization tests pin the current behaviour of the code the milestone will change (`cycle_management`, `request_scheduler`, `hp_writings`/`writePacket`, `climateControls`, state handling in the profiles) before it is modified
 
@@ -106,7 +106,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | COV-01 | Phase 1 | Complete |
-| COV-02 | Phase 1 | Pending |
+| COV-02 | Phase 1 | Complete |
 | COV-03 | Phase 1 | Complete |
 | COV-04 | Phase 1 | Complete |
 | SIM-01 | Phase 2 | Pending |

@@ -1,9 +1,9 @@
 {
-  "line": 67.05,
-  "branch": 60.08,
-  "line_covered": 2088,
-  "line_total": 3114,
-  "branch_covered": 1284,
+  "line": 84.87,
+  "branch": 73.84,
+  "line_covered": 2648,
+  "line_total": 3120,
+  "branch_covered": 1578,
   "branch_total": 2137,
   "toolchain": {
     "gcc": "13.3.0",
@@ -11,5 +11,5 @@
     "esphome": "2026.10.0",
     "os": "ubuntu 24.04"
   },
-  "source": "CI run 40960306032 (ubuntu-24.04)"
+  "source": "CI run 41010865084 (ubuntu-24.04)"
 }

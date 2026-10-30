@@ -11,7 +11,9 @@
 ///       esphome::millis_64 is inline in esp8266/hal.h and gets no definition here; components/esp8266/*.cpp
 ///       is not compiled (its core.cpp would define esphome::millis() and esphome::delay() a second time).
 ///       Also: the remaining Arduino-core / SDK one-liners (yield, esp_schedule, esp_delay, wdt, cycle
-///       counter, EspClass) and esphome::arch_* / helpers one-liners.
+///       counter, EspClass) and esphome::arch_* / helpers one-liners. esphome::random_uint32() returns
+///       cn105_test::TestRandom::next() (ESPHome compiles it out on ESP8266: os_random() lives in a
+///       platform .cpp that is not built).
 /// Deps: test_platform.h, tests/unit/harness/shim_esp8266 headers, esphome/core/hal.h
 
 #include <cstdint>
@@ -56,6 +58,6 @@ void arch_restart() { std::abort(); }
 void get_mac_address_raw(uint8_t *mac) {
     for (int i = 0; i < 6; i++) mac[i] = static_cast<uint8_t>(i);
 }
-uint32_t random_uint32() { return 4; }
+uint32_t random_uint32() { return cn105_test::TestRandom::next(); }  // os_random() upstream; a test-controlled value here
 
 }  // namespace esphome
